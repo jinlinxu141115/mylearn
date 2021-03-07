@@ -1,0 +1,445 @@
+2019.11.27　监控与服务安全　第三天　
+
+一.Linux基本防护
+
+.1.1.设置账号有效期  /etc/shadow
+
+   ..使用chage工具
+     -- -d 0 ,强制修改密码
+      --  -E yyyy-mm-dd  , 指定失效日期  (-1)
+
+[root@host50 ~]# chage -l
+用法：chage [选项] 登录
+
+选项：
+  -d, --lastday 最近日期        将最近一次密码设置时间设为“最近日期”
+  -E, --expiredate 过期日期     将帐户过期时间设为“过期日期”
+  -h, --help                    显示此帮助信息并推出
+  -I, --inactive INACITVE       过期 INACTIVE 天数后，设定密码为失效状态
+  -l, --list                    显示帐户年龄信息
+  -m, --mindays 最小天数        将两次改变密码之间相距的最小天数设为“最小天数”
+  -M, --maxdays 最大天数        将两次改变密码之间相距的最大天数设为“最大天数”
+  -R, --root CHROOT_DIR         chroot 到的目录
+  -W, --warndays 警告天数       将过期警告天数设为“警告天数”
+[root@host50 ~]# chage -d 0  lisi
+[root@host50 ~]# chage -E 2019/11/30 lisi
+
+[root@host50 ~]# chage -l lisi
+最近一次密码修改时间					：密码必须更改
+密码过期时间					：密码必须更改
+密码失效时间					：密码必须更改
+帐户过期时间						：11月 30, 2019
+两次改变密码之间相距的最小天数		：0
+两次改变密码之间相距的最大天数		：99999
+在密码过期之前警告的天数	：7
+
+
+
+.1.2.账号的锁定/解锁
+
+ --使用passwd命令 (给一定用户特定时期,不给予登入系统需求)
+
+ -- -l 锁定   , -u 解锁  , -S 看状态
+
+
+[root@host50 ~]# passwd -S lisi    //查看账号的状态. 显示没有锁定
+lisi PS 2019-11-27 0 99999 7 -1 (密码已设置，使用 SHA512 算法。)
+[root@host50 ~]# passwd -l lisi      //给账号lisi账号 上锁
+锁定用户 lisi 的密码 。
+passwd: 操作成功
+
+[root@host50 ~]# passwd -u lisi     //给账号解锁
+解锁用户 lisi 的密码。
+passwd: 操作成功
+
+
+.1.3.. 强制定期修改密码
+
+--配置文件 //etc/login.defs 
+   --对新键的用户有效
+..[root@host50 ~]# grep -v '#' /etc/login.defs
+
+MAIL_DIR	/var/spool/mail   
+
+PASS_MAX_DAYS	99999      用户的密码最大有效天数
+PASS_MIN_DAYS	0     修改密码最少间隔,0代表不需要定期,
+PASS_MIN_LEN	5     密码长度最少
+PASS_WARN_AGE	7      密码修改,7天警告  
+
+UID_MIN                  1000   //用户id
+UID_MAX                 60000
+SYS_UID_MIN               201
+SYS_UID_MAX               999
+
+GID_MIN                  1000
+GID_MAX                 60000
+SYS_GID_MIN               201
+SYS_GID_MAX               999
+
+
+CREATE_HOME	yes
+
+UMASK           077          //家目录 (反码) ,添加用户权限.
+
+USERGROUPS_ENAB yes           //用户组
+
+ENCRYPT_METHOD SHA512
+
+
+.1.4.伪装登录提示
+ --配置文件//etc/issue   ,  /etc/issue.net
+   ..分别使用本地 ,远程登录
+   ..默认会提示内核,系统等版本信息
+
+[root@host50 ~]# cat /etc/issue   //显示本地登入 服务器信息
+\S
+Kernel \r on an \m
+
+[root@host50 ~]# vim /etc/issue
+
+window2008
+welcome to my home !
+--------------------------------------------------------------------------------
+修改前
+CentOS Linux 7 (Core)
+Kernel 3.10.0-862.el7.x86_64 on an x86_64
+host51 login: 
+--------------------------------------------
+修改后
+window2008
+welcome to my home !
+
+host50 login: 
+---------------------------------------------------------------------------
+--1.5--文件系统安全
+
+  程序和服务控制
+.禁用非必要的系统服务
+--使用systemctl(RHEL7.0以上才支持) , chkconfig 工具
+
+RHEL6和RHEL5对系统服务管理命令,chkconfig工具
+
+ 7 系统  systemctl enable httpd   <==> 6系统    chkcongfig httpd on 
+      systemctl  disabled httpd <==>         chkconfi httpd off
+        systemctl start  httpd   <==>     server httpd start
+
+
+
+.1.6..锁定/解锁保护文件 (管理员也对这限制)
+
+  --EXT3/EXT4 的文件属性控制
+     ** chattr  (设置属性控制) .  lsattr (查看特殊文件属性)
+    
+        +  , -  , = 控制方式
+      ---属性i :  不可变 (immutable)  (无法删除,修改,移动)
+      -- 属性a :   仅可追加(append only)//仅可以追加 功能
+
+[root@host50 ~]# chattr +a  /etc/passwd
+[root@host50 ~]# lsattr /etc/passwd
+-----a---------- /etc/passwd
+[root@host50 ~]# useradd tom2
+useradd：无法打开 /etc/passwd
+[root@host50 ~]# ls -l /etc/passwd
+-rw-r--r-- 1 root root 1111 11月 27 09:36 /etc/passwd
+[root@host50 ~]# chattr -a /etc/passwd
+[root@host50 ~]# useradd tom2
+
+[root@host50 ~]# lsattr /etc/hosts   //查看文件属性
+---------------- /etc/hosts   //表示没有特殊属性
+[root@host50 ~]# chattr +i /etc/hosts  添加属性i ,让文件不可变.不能移动编辑,删除
+[root@host50 ~]# lsattr /etc/hosts
+----i----------- /etc/hosts
+
+
+[root@host50 ~]# chattr +a test01   //仅可以追加 功能
+[root@host50 ~]# lsattr test01
+-----a---------- test01
+[root@host50 ~]# echo "apend onl" >> test01
+[root@host50 ~]# cat test01
+123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123123
+apend onl
+
+
+
+
+二.用户切换和提权
+ 
+     .切换用户身份 , When?   普通用户远程   --- > 切换有权限用
+  --SSH远程管理
+     --运维测试   (不同运维人员 交接班)
+
+   ..提升执行权限,When?
+   --管理权限细分 ( 运维人员用 普通账号登入服务器,服务器ront给普通用户给予特定功能给予授权)
+
+ 2.1 su切换的基本用法
+  
+  .Substitute User , 换人
+  --快速切换指定的其它用户
+ --普通用户执时,需要验证目标用户的口令
+ --root执行是,无需验证口令
+ 
+..命令格式   用法1: su [-]  [目录用户]
+              用法2: su [-] -c "命令"  [目标用户]
+
+      带 - 切换带系统环境 一起切换过去
+     echo $PATH
+      pwd
+[root@host50 ~]# su - dc01
+上一次登录：三 11月 27 10:29:56 CST 2019pts/0 上
+[dc01@host50 ~]$ pwd
+/home/dc01
+[dc01@host50 ~]$ echo $PATH   //登入新的Shell环境
+/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/dc01/.local/bin:  
+     不带 -  ,只是账号切换过去
+[root@host50 ~]# useradd dc01
+[root@host50 ~]# su dc01
+[dc01@host50 root]$ pwd     //不会更换刚刚环境
+/root
+[dc01@host50 root]$ echo $PATH  
+/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/root/bin
+
+
+ [li@host50 ~] su - -c 'systemctl restart mysqld' root   //切换到root用户 重启mysql服务
+
+.2.1.1.分析su 切换的使用情况
+
+ --安全日志/var/log/secure
+ 记录su验证,Shell开启开启与关闭
+
+[root@host50 ~]# tail -1 /var/log/secure
+Nov 27 10:34:50 host50 su: pam_unix(su-l:session): session opened for user root by root(uid=1003)
+
+
+2.2 sudo提权的基本用法
+
+ .Super or another Do , 超级执行
+--管理员预先为用户设置执行许可   (普通用户可以,做管理员权限的事情)
+--被授权用户有权执行授权的命令,验证自己的口令
+
+..执行提权命令
+ --用法:  sudu  提权命令
+
+..查看提权命令
+ --用法 : sudo   -l
+
+.. 修改方式    
+     
+       方法:1/ 只能用root用户修改 配置文件 vim  /etc/sudoers //修改错误,颜色会变化
+       方法;2/ visudo
+
+A..授权记录格式
+  --用户    主机列表==命令列表 (执行命令必须为绝对路径)
+[root@host50 ~]# grep ^root /etc/sudoers
+root	ALL=(ALL) 	ALL
+
+可以是%组    目标身份,省略时表示root
+
+
+B..分析sudo提权的使用情况
+.修改全局配置,启用日志
+
+[root@host50 bin]# vim /etc/sudoers
+在末尾添加:Defaults logfile="/var/log/sudo.log"
+[root@host50 bin]# su - admin
+上一次登录：三 11月 27 11:44:12 CST 2019pts/0 上
+[admin@host50 ~]$ sudo rpm -q httpd
+httpd-2.4.6-80.el7.centos.x86_64
+
+[root@host50 bin]# tail -2 /var/log/sudo.log 
+Nov 27 11:59:17 : admin : TTY=pts/1 ; PWD=/home/admin ; USER=root ;
+    COMMAND=/bin/rpm -q httpd
+
+C..sudo别名设置
+.主要用途     //先定义,后调用. (别名的名称必须全大写,可以自定义)
+
+ --提高可重用性,易读性
+--简化配置,使记录更有条理
+------------------------------------------------------------------------------------------------------------------------------------
+Host_Alias MYSER=localhost , host50    //定义主机名别名  : MYSER 
+Cmnd_Alias PGE=/usr/bin/yum,/usr/bin/rpm  //定义命令别名 :PGE
+User_Alias MYUSER=mike,admin,tom     //别名定义用户 :MYUSER
+MYUSER  MYSER=PGE ,WEB
+-------------------------------------------------------------------------------------------------------
+案例1 : 允许mike以root权限执行/sbin/下的所有命令
+        但是,禁止修改eth0 网卡参数
+[root@host50 ~]# +91 vim /etc/sudoers
+mike    localhost,host50=/sbin/*,!/sbin/ifconfig eth0
+               //sbin/* *代表下的命令都授权给他.  !代表匹配的取反
+wq!   退出保存必须加! 才能保存成修改选项..
+
+[mike@host50 ~]$ sudo -l
+User mike may run the following commands on host50:
+    (root) /sbin/*, !/sbin/ifconfig eth0
+[mike@host50 ~]$ sudo useradd t1
+------------------------------------------------------------------------------------------------------------
+案例2: 
+       给admin用户授权,启动 mysqld ,启动httpd,rpm,yum的权利.修改mysql配置文件,和httptd主配置的文件
+以及输入时,无需要密码
+[root@host50 ~]# which rpm   //查看命令的绝对路径
+/usr/bin/rpm
+[root@host50 ~]# which yum
+/usr/bin/yum
+[root@host50 ~]# which vim
+/usr/bin/vim
+
+
+[root@host50 ~]# +91 vim /etc/sudoers    
+admin   localhost,host50=/bin/systemctl * mysqld ,/bin/systemctl * httpd,/usr/bin/rpm , /usr/bin/yum ,/usr/bin/vim /etc/my.cnf ,/usr/bin/vim  /etc/httpd/conf/httpd.conf, NOPASSWD:ALL 
+
+[admin@host50 ~]$ sudo systemctl start httpd
+[admin@host50 ~]$ sudo systemctl status httpd
+● httpd.service - The Apache HTTP Server
+   Loaded: loaded (/usr/lib/systemd/system/httpd.service; disabled; vendor preset: disabled)
+   Active: active (running) since Wed 2019-11-27 11:47:10 CST; 4s ago
+
+[admin@host50 ~]$ sudo rpm -q httpd
+httpd-2.4.6-80.el7.centos.x86_64
+
+----------------------------------------------------------------------------------------------------------------------------
+[root@host50 ~]# grep wheel /etc/sudoers
+## Allows people in group wheel to run all commands
+%wheel	ALL=(ALL)	ALL   //查看系统文件 wheel组对系统有任意权限
+[root@host50 ~]# useradd dc02
+[root@host50 ~]# echo 123456 | passwd --stdin dc02
+[root@host50 ~]# usermod -G wheel dc02   //把dc02加入到wheel组
+[root@host50 ~]# id dc02
+uid=1004(dc02) gid=1004(dc02) groups=1004(dc02),10(wheel)
+[root@host50 ~]# su - dc02
+[dc02@host50 ~]$ sudo -l           //查看dc02 提权命令
+[sudo] password for dc02: 
+Matching Defaults entries for dc02 on host50:
+User dc02 may run the following commands on host50:
+    (ALL) ALL                     //查看dc02有任意权限在host50服务器上
+[dc02@host50 ~]$ sudo ls /var/lib/mysql      //提权,使用命令查看mysql文件内容
+auto.cnf	 DB1   gamedb		  ib_logfile1	      server-cert.pem
+ca-key.pem	 db10  host50-bin.000001  mysql		      server-key.pem
+ca.pem		 db2   host50-bin.index   nb1		      sys
+
+
+[root@host50 ~]# grep wheel /etc/sudoers
+## Allows people in group wheel to run all commands
+%wheel	ALL=(ALL)	ALL
+wheel组所有地址登入,可以用root身份,进行任意的操作
+
+
+------------------------------------------------------------------------------------------------------------------------------------
+案例3,创建别名 :
+
+Host_Alias MYSER=localhost , host50    //定义主机名别名  : MYSER 
+Cmnd_Alias PGE=/usr/bin/yum,/usr/bin/rpm  //定义命令别名 :PGE
+Cmnd_Alias WEB=/bin/systemctl * httpd ,/bin/systemctl * mysqld
+
+User_Alias MYUSER=mike,admin,tom     //别名定义用户 :MYUSER
+
+root    ALL=(ALL)       ALL
+#mike    localhost,host50=/sbin/*,!/sbin/ifconfig eth0
+mike    MYSER=/sbin/* , !/sbin/ifconfig eth0 ,PGE
+MYUSER  MYSER=PGE ,WEB
+
+验证:
+[root@host50 ~]# su - tom
+Last login: Wed Nov 27 14:14:59 CST 2019 on pts/1
+[tom@host50 ~]$ 
+[tom@host50 ~]$ sudo -l
+
+User tom may run the following commands on host50:
+    (root) /usr/bin/yum, /usr/bin/rpm, /bin/systemctl * httpd,
+        /bin/systemctl * mysqld
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+
+三.SSH访问控制
+
+     .存在的安全隐患
+       --密码嗅探,键盘记录
+       --暴力枚举账号,猜解密码
+      
+       .常见防护措施
+     --用户限制,黑白名单
+     --更改验证方式(密码----> 密钥对)
+     --防火墙
+   3.1 修改配置 : 修改配置项  /etc/ssh/sshd_config
+     Port  3389 
+     Portcocl 2 //启用ssh  v2版本协议
+    ListenAddress 192.168.4.2 //指定某一网卡进行访问,其它就不能ssh. 默认全部网卡IP都能够访问ssh服务.
+     ..PermitRootLogin no   //禁止root登录
+     ..UseDNS  no             //不解析客户机地址
+      ..LoginGraceTime   1m
+      ..MaxAuthTries    3    //1分钟内最多认证次数
+   3.2 黑白名单 : 
+    ..黑名单  //不允许登录的列表
+    DenyUsers tom jin
+    DenyGroups  组
+    ..白名单    //允许登录的列表 (其它的用户,无法远程登入 ,如果白名单没有root,root也无法远程登入)
+     AllowUsers  User1@host(登入主机)
+     AllowGoups   GROUP1  GROUP2
+       AllowUsers tom  dc01@192.168.4.51(可以控制指定客户端登入)
+  3.3 登入认证方式
+      ..口令
+     PasswordAuthentication  yes   //支持远程等入,口令利用密码
+  (这个功能开之后,如果没有秘钥对,无法再正常登入)   
+   ..密钥对
+     PubkeyAuthentication yes
+
+ 48 AuthorizedKeysFile       
+
+  保存公钥的文件:/root/.ssh/authorized_keys
+   保存记录 你远程过的主机信息:/root/.ssh/known_hosts
+
+
+========================================
+一个服务器的公钥, 50服务器的公钥,传给服务器57服务器
+    51服务器想登入57服务器,无秘钥.一
+   方法一自己生成秘钥对,把公钥传给57服务器
+   方法二:把51的私钥拷贝到52服务器上 /root/.ssh/文件下  也可以访问57服务器
+
+======================================
+四.SELinux 安全防护
+    mls :多级保护(所有文件.但是服务器的性能会下降)
+     SEINUXTYPE=targeted  #保护文件服务器
+[root@host52 selinux]# vim config 
+[root@host52 selinux]# touch /.autorelabel  //达内服务器,修改SELinux配置必须创建这个文件,重启才会生效.
+[root@host52 selinux]# sestatus    //查看本机的SELinux状态
+SELinux status:                 enabled
+SELinuxfs mount:                /sys/fs/selinux
+SELinux root directory:         /etc/selinux
+Loaded policy name:             targeted
+Current mode:                   permissive
+Mode from config file:          permissive
+Policy MLS status:              enabled
+Policy deny_unknown status:     allowed
+Max kernel policy version:      31
+
+
+启用selinux遵循的一般规律:
+  A..创建新文件或者目录,会自动继承父目录的安全上下文.
+  B..移动文件时,保持原有的安全上下文不变 (mv)
+  C..复制(cp),会继承目标目录的安全上下文.
+
+[root@host52 ~]# ls -ldZ /root/
+dr-xr-x---. root root system_u:object_r:admin_home_t:s0 /root/
+
+   4.1修改安全上下文.
+    使用 chcon 工具
+   --- -t,指定访问类型
+    --- -R ,递归修改
+   chcon -t admin_home_t /tmp/a.txt
+4.2恢复安全上下文
+-R , 递归修改
+
+ restorecon test9.html
+ 
+  恢复系统内所有不正确的标签
+touch /.autorelabel
+reboot
+   4.3布尔值(服务的功能开关)
+
+
+   4.4.查看日志排查
+
+[root@host52 ~]# yum list | grep -i shoot
+setroubleshoot.x86_64                     3.2.29-3.el7               local_repo 
+setroubleshoot-plugins.noarch             3.0.66-2.1.el7             local_repo 
+setroubleshoot-server.x86_64              3.2.29-3.el7               local_repo 
+[root@host52 ~]# yum -y install setroubleshoot*

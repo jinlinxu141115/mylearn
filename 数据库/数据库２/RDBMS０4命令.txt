@@ -1,0 +1,513 @@
+2019.11.16　RDBMS 　第4天　命令
+----------------------------------------------------------------------------------------------------------------------------------
+回顾课程:
+---------------
+集群:                 多台服务器提供相同的服务.
+集群分类:             LB集群(负载均衡)                        HA(高可用)   HPC(科研技术)
+集群服务软件:      LVS (vip),Nginx,Haproxy          Keepalived
+
+----------------------------------------------------------------------------------------------------------------------------------
+一、MHA集群概述 (mysql 高可用集群)
+    --只做mysql高可用集群,其它http,邮件系统服务无效. 
+
+1.1  MHA简介（Master High  Availability）
+  
+  --是由日本DeNA公司youshimaton开发
+  --是一套优秀的实现MySQL高可用的解决方案
+  --数据的自动故障切换操作能做到0~30秒之内完成
+ --MHA能够保在故障切换过程中最大限度保证数据的一致性，以达到真正意义上高可用
+ --perl脚本语言编写,必须有解释perl程序.
+
+
+1.2 MHA组成
+
+   **MHA Manager （管理节点）
+       --管理所有数据库服务器
+       --可用单独部署在一台独立的机器上
+       --也可用部署在某台数据库服务器上
+
+
+   **MHA  Node（数据节点）
+         --存储数据的MySQL服务器上
+          --运行在每台MySQL服务器上
+
+
+1.3MHA工作过程
+
+  **MHA集群架构
+                                    |    ------> 复制组1   master   slave1  slave2
+    MHA（Manager）-          |  ------> 复制组2   master   slave1  slave2
+                                    |    ------> 复制组3   master   slave1  slave2
+    
+     MHA工作过程：
+    --由Manager 定时探测群集中的master节点
+    --当master故障时，Manager自动将拥有最新数据的slave提升为新当master
+    (另外其它slave服务器,自动变成新master的从服务器)
+
+1.4配置集群
+     a)环境准备
+       
+       .1.安装依赖包
+
+       .2.配置ssh秘钥对认证登录
+        --管理主机57可以无密码连接所有数据库服务器,
+        --配置所有数据库服务器之间连接ssh无密码登录
+        --配置一主多从同步结构 配置主服务器51,从服务器52,53
+       
+     b)配置管理节点(57)
+          .1.安装软件包
+               
+          .2.编写主配置文件(自己创建)
+      [server default]   //管理服务器默认配置
+      [server1]         //服务器的配置
+
+          .3.创建故障切换脚本.
+        
+         .4.部署vip地址
+        
+       [root@host51 ~]# ifconfig eth0:1 192.168.4.100/24  //临时配置vip
+     
+     c)配置数据节点(51,52,53)
+     
+          .1.安装mha_node软件包
+          .2.在所有数据库服务器上做授权用户
+                *1* 57用来监视的用户授权
+          mysql> grant all on *.* to root@"%" identified by "123qqq...A";   
+                *2*数据同步用户
+          grant replication slave on *.* to repluser@"%" identified by "123qqq...A";
+     
+            .3. 根据角色做相应配置
+
+            *1*启用半同步复制模式       //  保证至少一台slave 数据一致性,
+            *2*禁止自动删除本机的中继日志文件 //每台中继日志只保留最近两个.担心sql线程没有执行完成现有的sql命令.数据丢失.
+            *3*启动52,53bin_log 日志
+            *4*重启各台数据服务器mysqld
+            *5*检查各服务器slave状态是否正常
+  
+     d)测试配置
+
+          *1*测试集群环境 
+             -- 管理节点上测试ssh配置
+[root@host57 mha]# masterha_check_ssh  --conf=/etc/mha/app1.cnf
+Sat Nov 16 15:20:55 2019 - [info] All SSH connection tests passed successfully
+             --在管理节点上测试主从同步配置
+[root@host57 mha]# masterha_check_repl --conf=/etc/mha/app1.cnf
+ MySQL Replication Health is OK.
+            
+        f)启动管理服务 . //启动会占用一个终端.
+        --remove_dead_master_conf   //删除宕机主库的配置
+         --ignore_last_failover    //默认8个小时内只有切换一次故障,如果有这个选项有故障,就随时切换.忽略最后一次xxx.health //记录启动信息.
+root@host57 ~]# masterha_manager --conf=/etc/mha/app1.cnf \
+> --remove_dead_master_conf --ignore_last-failover
+
+//启动,mha服务器会加载当前的主配置文件,并监控3台数据服务器的情况.监视51主服务器的运行状态.如果51宕机,会把配置文件 [server 1] 的配置文件删除,并退出mha服务.挑选另外slave为主服务器.
+           *2*查看运行状态:
+[root@host57 ~]# masterha_check_status --conf=/etc/mha/app1.cnf
+
+           H)..停止服务
+[root@host57 ~]# masterha_stop  --conf=/etc/mha/app1.cnf 
+
+
+          I)..访问集群服务
+               *1* 在51主服务器添加访问数据的连接用户. 客户端连接使用.
+      mysql> grant select,insert on db9.* to yaya55@"%" identified by "123qqq...A";
+              
+              *2*客户端50访问 集群
+ 
+[root@host50 ~]# mysql -h192.168.4.100 -uyaya55 -p123qqq...A
+mysql> insert into db9.a values(100);
+mysql> select * from db9.a;
+           J)..测试高可用:当主服务器51宕机后,客户端还能正常访问数据.
+              模拟故障的方法:
+                 --停止mysql服务
+                 --关机
+                
+    (当57管理服务,无法收51主服务器3306端口信息时,57管理服务停止, 目录结构下app1.conf的脚本会被执行,谁的数据最接近master选择为 主服务器.谁是主服务器就接管vip,另外一个自动变成为他的从服务器)      
+
+                  --在管理主机上启动管理服务并查看服务状态   
+
+              *3*修复故障服务器51:把51主机再添加为回去集群.//放回去必须为从服务器
+   
+      >>> 配置数据库服务器:具体操作如下
+
+              --启动51mysq 服务器
+              --与主服务器数据一致    
+              --指定主服务器信息 
+               --启动slave进程  //把51做52的从服务器
+                --查看状态 
+
+       >>>配置管理服务器
+       
+             具体操作如下
+              --修改主配置文件
+              --测试集群环境
+              --启动管理服务器
+[root@host57 ~]# masterha_stop  --conf=/etc/mha/app1.cnf //重新加载把51服务器放进来
+               --查看服务器   
+[root@host57 ~]# masterha_check_status --conf=/etc/mha/app1.cnf
+app1 (pid:3073) is running(0:PING_OK), master:192.168.4.52
+====================================================
+案例一,MHA集群架构搭建: 50客户机,51主master,52,53从服务slave,57mha管理主机 
+vip:192.168.4.100
+----------------------------------------------------------------------------------------------------------------------------
+
+A)环境准备:
+mha软件,上传到各服务器:
+
+[student mysql]$  scp -r mha-soft-student root@192.168.4.57:/root/
+[student mysql]$  scp -r mha-soft-student root@192.168.4.51:/root/
+[student mysql]$  scp -r mha-soft-student root@192.168.4.52:/root/
+[student mysql]$  scp -r mha-soft-student root@192.168.4.53:/root/
+-----------------------------------------------------------------------
+在 57,51,52,53服务器分别做,把软件上依赖包先安装
+
+[root@host57 ~]# cd mha-soft-student/
+[root@host57 mha-soft-student]# ls
+app1.cnf
+master_ip_failover
+mha4mysql-manager-0.56.tar.gz
+mha4mysql-node-0.56-0.el6.noarch.rpm
+perl-Config-Tiny-2.14-7.el7.noarch.rpm
+perl-Email-Date-Format-1.002-15.el7.noarch.rpm
+perl-Log-Dispatch-2.41-1.el7.1.noarch.rpm
+perl-Mail-Sender-0.8.23-1.el7.noarch.rpm
+perl-Mail-Sendmail-0.79-21.el7.art.noarch.rpm
+perl-MIME-Lite-3.030-1.el7.noarch.rpm
+perl-MIME-Types-1.38-2.el7.noarch.rpm
+perl-Parallel-ForkManager-1.18-2.el7.noarch.rpm
+[root@host57 mha-soft-student]# yum -y install perl-* //安装软件包里依赖包.
+-----------------------------------------------------------------------------------------------------------
+在57上生成秘钥对,分别传给51 52 53,57服务器可以无秘钥登入其个数据库服务器
+
+[root@host57 ]# ssh-keygen      //产生秘钥,直接按回车键,加回车键可以生成
+[root@host57 ]# ssh-cop-id root@192.168.4.51
+[root@host57 ]# ssh-cop-id root@192.168.4.52
+[root@host57 ]# ssh-cop-id root@192.168.4.53
+--------------------------------------------------------------------------------------------------------------
+51,52,53配置各主机之间连接ssh无密码登录
+
+[root@host51 ]# ssh-keygen
+[root@host51 ]# ssh-copy-id root@192.168.4.52
+[root@host51 ]# ssh-copy-id root@192.168.4.53
+
+[root@host52 ]# ssh-keygen
+[root@host52 ]# ssh-copy-id root@192.168.4.51
+[root@host52 ]# ssh-copy-id root@192.168.4.53
+
+
+[root@host53 ]# ssh-keygen
+[root@host53 ]# ssh-copy-id root@192.168.4.51
+[root@host53 ]# ssh-copy-id root@192.168.4.52
+
+---------------------------------------------------------------------------------------------------------------------------
+B)..配置51主 52 ,53 从同步结构
+--------------------------------------------------------------------------------------------------------------------
+根据之前学习的内容,配置好环境
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+C)..配置57管理主机
+------------------------------------------------------------------------------------------------------------------------
+.1.安装软件包
+[root@host57 ]# cd  mha-soft-student/
+[root@host57 mha-soft-student]# yum -y install mha4mysql-node-0.56-0.el6.noarch.rpm   //安装客户端软件
+[root@host57 mha-soft-student]# tar -zxf mha4mysql-manager-0.56.tar.gz 
+[root@host57 mha-soft-student]# cd mha4mysql-manager-0.56/
+[root@host57 mha4mysql-manager-0.56]# yum -y install perl-ExtUtils-*
+[root@host57 mha4mysql-manager-0.56]# yum -y install perl-CPAN* //安装依赖包
+[root@host57 mha4mysql-manager-0.56]# perl Makefile.PL
+[root@host57 mha4mysql-manager-0.56]# make
+[root@host57 mha4mysql-manager-0.56]# make install
+
+ .2.编写主配置文件(自己创建)
+
+[root@host57]# mkdir /etc/mha
+[root@host57]# cp mha4mysql-manager-0.56/samples/conf/app1.cnf /etc/mha
+[server default]         //管理服务默认配置
+manager_workdir=/etc/mha         //工作目录
+manager_log=/etc/mha/manager.log     //日志文件
+master_ip_failover_script=/etc/mha/master_ip_failover  //故障切换脚本
+
+ssh_user=root         //访问ssh服务用户
+ssh_port=22           //ssh服务端口
+
+repl_user=repluser             //主服务器数据同步授权用户
+repl_password=123qqq...A       //密码
+
+user=root                        //监控用户
+password=123qqq...A              //密码
+
+[server1]                          //指定第一台数据服务器
+hostname=192.168.4.51             //服务器IP地址
+port=3306                         //服务端口
+candidate_master=1                 //竞选主服务器
+
+[server2]                               //指定第二台数据库服务器
+hostname=192.168.4.52
+port=3306
+candidate_master=1
+
+[server3]                          //指定第三台数据库服务器
+hostname=192.168.4.53
+port=3306
+candidate_master=1
+
+ .3.创建故障切换脚本.
+
+默认脚本路径:/mha4mysql-manager-0.56/samples/scripts/mastr_ip_failover
+
+[root@host57 mha-soft-student]# cp master_ip_failover  /etc/mha/
+[root@host57 mha]# vim master_ip_failover  //在 35排添加如下代码
+my $vip = '192.168.4.100/24';  # 定义Virtual IP 
+my $key = "1";               //定义地址编号
+my $ssh_start_vip = "/sbin/ifconfig eth0:$key $vip"; //绑定vip地址
+my $ssh_stop_vip = "/sbin/ifconfig eth0:$key down";   //释放vip地址
+          
+.4.部署vip地址
+
+在51主服务器上配置临时的vip地址
+[root@host51 ~]# ifconfig eth0:1 192.168.4.100/24
+[root@host51 ~]# ifconfig eth0:1 
+eth0:1: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 192.168.4.100  netmask 255.255.255.0  broadcast 192.168.4.255
+        ether 52:54:00:b5:9f:4d  txqueuelen 1000  (Ethernet)
+
+--------------------------------------------------------------------------------------------------------------------
+D)配置数据节点(51,52,53)
+--------------------------------------------------------------------------------------------------------------------
+  .1.安装mha_node软件包
+
+  [root@host51 mha-soft-student]# yum -y install mha4mysql-node-0.56-0.el6.noarch.rpm   //安装客户端软件
+     .2.在所有数据库服务器上做授权用户
+
+           *1* 57用来监视的用户授权 (51,52,53)
+          mysql> grant all on *.* to root@"%" identified by "123qqq...A";
+                *2*数据同步用户 (52 53服务器配置)
+        grant replication slave on *.* to repluser@"%" identified by "123qqq...A";
+                 
+---------------------------------------------------------------------------------------------------------------------------
+ F)..根据角色做相应配置
+-----------------------------------------------------------------------------------------------------------------------------
+          *1*启用半同步复制模式       /
+          *2*禁止自动删除本机的中继日志文件 //每台中继日志只保留最近两个.担心sql线程没有执行完成现有的sql命令.数据丢失.
+          *3*启动52,53bin_log 日志
+
+-----------------------------------------------------------------------------------------------------------------------------
+51服务器角色配置:
+
+[root@host51 ~]# vim /etc/my.cnf
+
+plugin-load="rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so"
+//加载模块
+rpl_semi_sync_master_enabled=1  //启用master模块
+rpl_semi_sync_slave_enabled=1   //启用slave模块
+
+relay_log_purge=0                //禁止自动删除中继日志文件
+mysql> show variables like "rpl_semi_sync_%_enabled";
++------------------------------+-------+
+| Variable_name                | Value |
++------------------------------+-------+
+| rpl_semi_sync_master_enabled | ON    |
+| rpl_semi_sync_slave_enabled  | ON    |
++------------------------------+-------+
+
+52服务器角色配置
+server_id=52
+log_bin=master52
+relay_log_purge=0
+
+plugin-load="rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so"
+rpl_semi_sync_master_enabled=1
+rpl_semi_sync_slave_enabled=1
+
+53服务器角色配置
+
+server_id=53
+log_bin=master53
+relay_log_purge=0
+
+plugin-load="rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so"
+rpl_semi_sync_master_enabled=1
+rpl_semi_sync_slave_enabled=1
+
+--------------------------------------------------------------------------------------------------------------------------------
+G)..测试配置
+----------------------------------------------------------------------------------------------------------------------------------
+ *1*测试集群环境 
+       -- 管理节点上测试ssh配置
+[root@host57 mha]# masterha_check_ssh  --conf=/etc/mha/app1.cnf
+
+Sat Nov 16 15:20:52 2019 - [warning] Global configuration file /etc/masterha_default.cnf not found. Skipping.
+Sat Nov 16 15:20:52 2019 - [info] Reading application default configuration from /etc/mha/app1.cnf..
+Sat Nov 16 15:20:52 2019 - [info] Reading server configuration from /etc/mha/app1.cnf..
+Sat Nov 16 15:20:52 2019 - [info] Starting SSH connection tests..
+Sat Nov 16 15:20:53 2019 - [debug] 
+Sat Nov 16 15:20:52 2019 - [debug]  Connecting via SSH from root@192.168.4.51(192.168.4.51:22) to root@192.168.4.52(192.168.4.52:22)..
+Sat Nov 16 15:20:52 2019 - [debug]   ok. 
+Sat Nov 16 15:20:52 2019 - [debug]  Connecting via SSH from root@192.168.4.51(192.168.4.51:22) to root@192.168.4.53(192.168.4.53:22)..
+Sat Nov 16 15:20:53 2019 - [debug]   ok.
+Sat Nov 16 15:20:53 2019 - [debug] 
+Sat Nov 16 15:20:53 2019 - [debug]  Connecting via SSH from root@192.168.4.52(192.168.4.52:22) to root@192.168.4.51(192.168.4.51:22)..
+Sat Nov 16 15:20:53 2019 - [debug]   ok.
+Sat Nov 16 15:20:53 2019 - [debug]  Connecting via SSH from root@192.168.4.52(192.168.4.52:22) to root@192.168.4.53(192.168.4.53:22)..
+Sat Nov 16 15:20:53 2019 - [debug]   ok.
+Sat Nov 16 15:20:55 2019 - [debug] 
+Sat Nov 16 15:20:53 2019 - [debug]  Connecting via SSH from root@192.168.4.53(192.168.4.53:22) to root@192.168.4.51(192.168.4.51:22)..
+Sat Nov 16 15:20:53 2019 - [debug]   ok.
+Sat Nov 16 15:20:53 2019 - [debug]  Connecting via SSH from root@192.168.4.53(192.168.4.53:22) to root@192.168.4.52(192.168.4.52:22)..
+Sat Nov 16 15:20:54 2019 - [debug]   ok.
+Sat Nov 16 15:20:55 2019 - [info] All SSH connection tests passed successfully.
+             
+       --测试主从同步:在管理节点上测试主从同步配置
+
+[root@host57 mha]# masterha_check_repl --conf=/etc/mha/app1.cnf
+
+
+Sat Nov 16 15:22:37 2019 - [warning] Global configuration file /etc/masterha_default.cnf not found. Skipping.
+Sat Nov 16 15:22:37 2019 - [info] Reading application default configuration from /etc/mha/app1.cnf..
+Sat Nov 16 15:22:37 2019 - [info] Reading server configuration from /etc/mha/app1.cnf..
+Sat Nov 16 15:22:37 2019 - [info] MHA::MasterMonitor version 0.56.
+Sat Nov 16 15:22:38 2019 - [info] GTID failover mode = 0
+Sat Nov 16 15:22:38 2019 - [info] Dead Servers:
+Sat Nov 16 15:22:38 2019 - [info] Alive Servers:
+Sat Nov 16 15:22:38 2019 - [info]   192.168.4.51(192.168.4.51:3306)
+Sat Nov 16 15:22:38 2019 - [info]   192.168.4.52(192.168.4.52:3306)
+Sat Nov 16 15:22:38 2019 - [info]   192.168.4.53(192.168.4.53:3306)
+Sat Nov 16 15:22:38 2019 - [info] Alive Slaves:
+Sat Nov 16 15:22:38 2019 - [info]   192.168.4.52(192.168.4.52:3306)  Version=5.7.17-log (oldest major version between slaves) log-bin:enabled
+Sat Nov 16 15:22:38 2019 - [info]     Replicating from 192.168.4.51(192.168.4.51:3306)
+Sat Nov 16 15:22:38 2019 - [info]     Primary candidate for the new Master (candidate_master is set)
+Sat Nov 16 15:22:38 2019 - [info]   192.168.4.53(192.168.4.53:3306)  Version=5.7.17-log (oldest major version between slaves) log-bin:enabled
+Sat Nov 16 15:22:38 2019 - [info]     Replicating from 192.168.4.51(192.168.4.51:3306)
+Sat Nov 16 15:22:38 2019 - [info]     Primary candidate for the new Master (candidate_master is set)
+Sat Nov 16 15:22:38 2019 - [info] Current Alive Master: 192.168.4.51(192.168.4.51:3306)
+Sat Nov 16 15:22:38 2019 - [info] Checking slave configurations..
+Sat Nov 16 15:22:38 2019 - [info]  read_only=1 is not set on slave 192.168.4.52(192.168.4.52:3306).
+Sat Nov 16 15:22:38 2019 - [info]  read_only=1 is not set on slave 192.168.4.53(192.168.4.53:3306).
+
+MySQL Replication Health is OK.
+
+------------------------------------------------------------------------------------------------------------------------------
+H)..启动服务
+-----------------------------------------------------------------------------------------------------------------------------
+启动管理服务器
+
+[root@host57 ~]# 
+[root@host57 ~]# masterha_manager --conf=/etc/mha/app1.cnf \
+> --remove_dead_master_conf --ignore_last-failover
+Sat Nov 16 16:12:31 2019 - [warning] Global configuration file /etc/masterha_default.cnf not found. Skipping.
+Sat Nov 16 16:12:31 2019 - [info] Reading application default configuration from /etc/mha/app1.cnf..
+Sat Nov 16 16:12:31 2019 - [info] Reading server configuration from /etc/mha/app1.cnf..
+
+查看管理服务状态
+[root@host57 ~]# masterha_check_status --conf=/etc/mha/app1.cnf
+app1 (pid:1725) is running(0:PING_OK), master:192.168.4.51
+
+查看xx.health 内容.记录当前高可以,运行状态查询读写51服务器为主服务器.
+
+[root@host57 mha]# ls
+app1.cnf  app1.master_status.health  manager.log  master_ip_failover
+[root@host57 mha]# cat app1.master_status.health 
+1725	0:PING_OK	master:192.168.4.51[root@host57 mha]# 
+
+停止mha服务器
+
+[root@host57 ~]# masterha_stop  --conf=/etc/mha/app1.cnf
+
+-----------------------------------------------------------------------------------------------------------------------------------
+I).. 访问集群
+---------------------------------------------------------------------------------------------------------------------------------
+  *1* 在主服务器上添加访问数据的连接用户
+[root@host51 ~]# mysql -uroot -p123456
+mysql> grant select,insert on db9.* to yaya55@"%" identified by "123qqq...A";                           //授权客户端访问账号
+mysql> create database db9;           //创建库
+mysql> create table db9.a(id int)      //创建表
+
+
+  *2*客户端50访问 集群
+
+[root@host50 ~]# mysql -h192.168.4.100 -uyaya55 -p123qqq...A
+
+mysql> insert into db9.a values(100);
+Query OK, 1 row affected (0.10 sec)
+
+mysql> select * from db9.a;
++------+
+| id   |
++------+
+|  100 |
+
+J)..测试高可用:当主服务器51宕机后,客户端还能正常访问数据.
+              模拟故障的方法:
+                 --停止mysql服务
+                 --关机
+
+[root@host51 ~]# systemctl stop mysqld
+[root@host50 ~]# mysql -h192.168.4.100 -uyaya55 -p123qqq...A
+
+mysql> select @@hostname; //选择52服务器为主服务器,
++------------+
+| @@hostname |
++------------+
+| host52     |
++------------+
+1 row in set (0.00 sec
+
+
+到53服务器查询,主从关系
+
+mysql> show slave status \G;   //53服务器为52的从服务器
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for master to send event
+                  Master_Host: 192.168.4.52
+                  Master_User: repluser
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: master52.000001
+          Read_Master_Log_Pos: 154
+               Relay_Log_File: host53-relay-bin.000002
+                Relay_Log_Pos: 319
+        Relay_Master_Log_File: master52.000001
+             Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes
+
+--------------------------------------------------------------------------------------
+在57管理主机上启动管理服务并查看服务状态
+[root@host57 ~]# masterha_manager --conf=/etc/mha/app1.cnf --remove_dead_master_conf --ignore_last-failover
+Sat Nov 16 17:23:47 2019 - [warning] Global configuration file /etc/masterha_default.cnf not found. Skipping.
+Sat Nov 16 17:23:47 2019 - [info] Reading application default configuration from /etc/mha/app1.cnf..
+Sat Nov 16 17:23:47 2019 - [info] Reading server configuration from /etc/mha/app1.cnf..
+
+//启动管理服务
+[root@host57 ~]# masterha_manager --conf=/etc/mha/app1.cnf --remove_dead_master_conf --ignore_last-failover
+Sat Nov 16 17:23:47 2019 - [warning] Global configuration file /etc/masterha_default.cnf not found. Skipping.
+Sat Nov 16 17:23:47 2019 - [info] Reading application default configuration from /etc/mha/app1.cnf..
+Sat Nov 16 17:23:47 2019 - [info] Reading server configuration from /etc/mha/app1.cnf..
+
+//查看状态
+
+[root@host57 ~]# masterha_check_status --conf=/etc/mha/app1.cnf
+app1 (pid:3073) is running(0:PING_OK), master:192.168.4.52
+
+
+
+
+*3*修复故障服务器51:把51主机再添加为回去集群
+     
+  配置数据库服务器:具体操作如下
+
+              --启动51mysq 服务器
+              --与主服务器数据一致    
+              --指定主服务器信息 
+               --启动slave进程
+                --查看状态 
+
+   配置管理服务器
+              具体操作如下
+              
+
+
+=============================================
+缺点:   主服务器停.监控服务mha会自动退出.必须手动重启再监控
+

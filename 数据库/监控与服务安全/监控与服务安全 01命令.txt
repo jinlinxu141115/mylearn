@@ -1,0 +1,297 @@
+2019.11.23　监控与服务安全　第一天　
+
+
+
+一.监控概述
+
+
+系统监控命令
+
+.ps .ifconfig .uptime .free .swapon -s .df .-h . netstat 或ss  .ping 
+
+.traceroute 查看到目标地址经过多少路由
+
+  traceroute www.baidu.com
+.iostat 输入输出状态
+
+
+自动化监控系统
+
+.Cacti  基于SNMP协议的监控软件,强大的绘图能力 //到官方网下载功能模块,监控报警
+
+.Nagios 基于Agent监控,强大的状态检查与报警机制
+          -插件极多(功能模块),自己写监控脚本嵌入到Nagios非常方便. //没有画图功能.
+
+                                    
+.Zabbix  -基于多种监控机制,支持分别是监控.
+
+.Prometheus (普罗米修斯) 
+
+
+二.Zabbix简介
+
+.Zabbix是一个高读
+
+
+1.32 Zabbix 
+       1 安装源码Zabbix
+       
+1.3.3 启动zabbix服务
+        ..修改主配置文件.
+[root@host5 ~]# vim /usr/local/etc/zabbix_server.conf 
+        ..启动服务
+        ..查看服务器信息
+
+ 三.Zabbix监控服务
+    2.1基础监控:监控主机:监控网站服务器192.168.2.100
+       
+       ..安装配置客户的100
+               安装zabbix软件
+               修改配置文件
+               启动zabbix_agentd服务
+              查看服务 (默认客户端端口号:10050)
+       ..配置服务器5
+         登入管理界面,做如下操作
+         ..添加监控主机
+    
+        一级菜单 配置  --> 二级菜单   主机  -->  右上角 创建主机
+
+         ..选择监控模板
+ 一级菜单 配置  --> 二级菜单   主机  --> 点击主机名称 --> 模板 -->连接指示器 选择模板
+-->选择缺点. 确认好点击添加按键,会显示到连接的模板,确认好,点击更新.添加完成
+       
+         ..查看监控数据
+
+      2.2自定义监控项,在客户端定义命令,给监控服务器使用.
+
+          a)配置被监控客户端.192.168.2.100
+                ..启动自定义监控项功能 
+          
+           b)配置监控服务器 192.168.2.5
+               ..登入管理界面一下操作.
+                       --创建监控模板 ATMP1
+                       -- 创建应用集   yyj1 监控项分类(优先级)
+                       -- 创建监控项   (名称,命令)
+                       -- 创建监控图形
+                       --使用新模板ATMP1监控主机 host100
+                        --查看监控数据
+    
+三.搭建平台.
+
+1.环境准备:LNMP 服务搭建
+
+安装包:   LNMP 服务搭建
+
+[root@host5 nginx-1.12.2]#yum -y install gcc pcre-devel zlib-devel openssl-devel
+
+[root@host5 nginx-1.12.2]# tar -xf nginx-1.12.2.tar.gz 
+[root@host5 nginx-1.12.2]# cd nginx-1.12.2/
+[root@host5 nginx-1.12.2]# ./configure  --with-http_ssl_module
+[root@host5 nginx-1.12.2]# make && make install
+[root@host5 nginx-1.12.2]#  yum -y install php php-mysql
+[root@host5 nginx-1.12.2]# yum -y install mariadb mariadb-devel mariadb-server
+
+[root@host5 nginx-1.12.2]#  yum -y install php-fpm
+
+启动服务:nginx,mariadb,php-frm
+
+[root@host5 ~]# systemctl start mariadb
+[root@host5 ~]# systemctl enable mariadb
+[root@host5 ~]#  systemctl start php-fpm
+[root@host5 ~]#  systemctl enable php-fpm
+[root@host5 ~]#  /usr/local/nginx/sbin/nginx 
+[root@host5 ~]#  netstat -natup
+Active Internet connections (servers and established)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+tcp        0      0 127.0.0.1:9000          0.0.0.0:*               LISTEN      25897/php-fpm: mast 
+tcp        0      0 0.0.0.0:3306            0.0.0.0:*               LISTEN      25841/mysqld        
+tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN 
+
+[root@host5 ~]# echo "/usr/local/nginx/sbin/nginx" >> /etc/rc.local
+[root@host5 ~]# chmod +x /etc/rc.local   //把nginx设置开机自启动.
+
+
+测试LNMP环境
+[root@host5 ~]# cat /usr/local/nginx/html/test.php
+<?php
+$i=33;
+echo $i;
+?>
+[root@host5 ~]# curl 192.168.2.5/test.php
+33
+lib
+
+安装zabbix源码包
+
+[root@host5 zabbix-3.4.4]yum -y install curl-devel net-snmp-devel libevent-devel
+[root@host5 zabbix-3.4.4]tar -xf zabbix-3.4.4.tar.gz 
+[root@host5 zabbix-3.4.4] cd zabbix-3.4.4/
+[root@host5 zabbix-3.4.4]./configure --enable-server --enable-proxy --enable-agent --with-mysql=/usr/bin/mysql_config --with-net-snmp --with-libcurl 
+ [root@host5 zabbix-3.4.4] make install
+[root@host5 zabbix-3.4.4]# ls /usr/local/etc/ 
+zabbix_agentd.conf    zabbix_proxy.conf    zabbix_server.conf
+zabbix_agentd.conf.d  zabbix_proxy.conf.d  zabbix_server.conf.d
+[root@host5 zabbix-3.4.4]# ls /usr/local/bin/
+eip  setip  zabbix_get  zabbix_sender
+[root@host5 zabbix-3.4.4]# ls /usr/local/sbin/
+zabbix_agentd  zabbix_proxy  zabbix_server
+
+
+[root@host5 ~]# mysql    //创建数据库,相应授权用户
+MariaDB [(none)]> create database zabbix character set utf8; 支持中文yum -
+  
+MariaDB [(none)]> grant all on zabbix.* to zabbix@"localhost" identified by "zabbix";
+
+
+导入zabbix 监控的数据库
+[root@host5 ~]# cd zabbix-3.4.4/database/mysql/
+[root@host5 mysql]# ls
+data.sql  images.sql  schema.sql
+
+[root@host5 mysql]# mysql -uzabbix -pzabbix zabbix < schema.sql 
+[root@host5 mysql]# mysql -uzabbix -pzabbix zabbix < images.sql 
+[root@host5 mysql]# mysql -uzabbix -pzabbix zabbix < data.sql
+
+网页上线:把zabbix网页放到nginx默认目录下
+
+[root@host5 ~]# cd zabbix-3.4.4/frontends/php/
+[root@host5 php]# cp -a * /usr/local/nginx/html/  //-a保持文件属性
+[root@host5 php]# chmod -R 777 /usr/local/nginx/html/*
+
+修改nginx配置文件
+
+[root@host5 html]# vim /usr/local/nginx/conf/nginx.conf
+http {
+
+      fastcgi_buffers 8 16k;  //缓存php生成的网页内容,8个16k
+      fastcgi_buffer_size 32k; //缓存php生成的头部信息
+      fastcgi_connect_timeout 300;//连接php的超时时间
+      fastcgi_send_timeout 300;//发送请求的超时时间
+      fastcgi_read_timeout 300;//读取请求的超时时间
+
+[root@host5 html]# /usr/local/nginx/sbin/nginx -t
+nginx: the configuration file /usr/local/nginx/conf/nginx.conf syntax is ok
+nginx: configuration file /usr/local/nginx/conf/nginx.conf test is successful
+[root@host5 html]# /usr/local/nginx/sbin/nginx -s stop
+[root@host5 html]# /usr/local/nginx/sbin/nginx 
+
+
+
+初始化网页值准备
+
+安装依赖包:
+[root@host5 html]#yum -y install php-gd(图表) php-xml(扩展标识语言) php-ldap(用户远程) php-bcmath(支持正则) php-mbstring(多字符兼容,用户共享类似)
+[root@host5 html]#   vim /etc/php.ini 
+date.timezone=Asia/Shanghai    //设置时区
+max_execution_time=300
+post_max_size=32M
+max_input_time=300
+
+ [root@host5 html]#systemctl restart php-fpm
+
+
+设置配置文件
+
+
+Configuration file "/usr/local/nginx/html/conf/zabbix.conf.php" created.初始配置信息.
+
+
+
+启动 zabbix服务器
+
+
+[root@host5 ~]# vim /usr/local/etc/zabbix_server.conf
+DBHost=localhost            //数据库主机
+DBName=zabbix               //设置数据名称
+DBUser=zabbix             //设置数据库账号
+DBPassword=zabbix             //设置数据库密码
+LogFile=/tmp/zabbix_server.log   //设置日志
+
+[root@host5 ~]# useradd zabbix     //不创建用户无法启动
+[root@host5 ~]# zabbix_    
+zabbix_agentd  zabbix_get     zabbix_proxy   zabbix_sender  zabbix_server
+[root@host5 ~]# zabbix_server         //启动服务器
+[root@host5 ~]# netstat -natup | grep :10051
+tcp        0      0 0.0.0.0:10051           0.0.0.0:*               LISTEN      3337/zabbix_server  
+tcp        0      0 192.168.2.5:10051       192.168.2.5:38258       TIME_WAIT
+
+[root@host5 ~]# killall  -9 zabbix_server  关掉进程.停服务器
+
+
+
+
+
+配置被监视服务器100客户端
+
+安装软件
+
+
+[root@host100 ]#yum -y install pcre-devel gcc
+[root@host100 ]# tar -xf zabbix-3.4.4.tar.gz sys
+[root@host100 zabbix-3.4.4]#  cd zabbix-3.4.4/
+[root@host100 zabbix-3.4.4]#  ./configure --enable-agent
+[root@host100 zabbix-3.4.4]#  make install
+[root@host100 zabbix-3.4.4]# ls /usr/local/etc
+zabbix_agentd.conf  zabbix_agentd.conf.d
+[root@host100 zabbix-3.4.4]# ls /usr/local/bin
+eip  setip  zabbix_get  zabbix_sender
+[root@host100 zabbix-3.4.4]# ls /usr/local/sbin
+zabbix_agentd
+
+
+
+配置host100被监控主机,修改配置文件
+
+[root@host100 zabbix-3.4.4]# vim /usr/local/etc/zabbix_agentd.conf
+
+Server=127.0.0.1,192.168.2.5  //允许访问服务器地址列表
+ServerActive=192.168.2.5:10051  //允许监控服务器iP地址
+ LogFile=/tmp/zabbix_agentd.log  //日志文件
+
+[root@host100 zabbix-3.4.4]# useradd zabbix
+[root@host100 zabbix-3.4.4]# zabbix_agentd 
+[root@host100 zabbix-3.4.4]# netstat -utnlp | grep :10050
+tcp        0      0 0.0.0.0:10050           0.0.0.0:*               LISTEN      30511/zabbix_agentd 
+
+
+
+
+自定义监控项,在2.100客户端定义命令,给监控服务器使用.
+
+监控服务上有多少用户
+[root@host100 zabbix-3.4.4]# vim /usr/local/etc/zabbix_agentd.conf
+UnsafeUserParameters=1   //允许自定义命令key
+Include=/usr/local/etc/zabbix_agentd.conf.d/*.conf  //定义自定义存放配置文件目录
+
+wq
+
+[root@host100 etc]# cd zabbix_agentd.conf.d/
+[root@host100 zabbix_agentd.conf.d]# vim xu.conf  //编写自定义命令.查询服务上用户
+UserParameter=get_sum_users,wc -l /etc/passwd | awk '{print $1}'
+
+// UserParameter = 自定义名字,自定义命令
+
+[root@host100 zabbix_agentd.conf.d]# killall  -9 zabbix_agentd
+[root@host100 zabbix_agentd.conf.d]# killall  -9 zabbix_agentd
+zabbix_agentd: no process found
+[root@host100 zabbix_agentd.conf.d]# zabbix_agentd
+[root@host100 zabbix_agentd.conf.d]# netstat -utnlp | grep :10050
+tcp        0      0 0.0.0.0:10050           0.0.0.0:*               LISTEN     
+
+
+[root@host100 zabbix_agentd.conf.d]# zabbix_get -s 127.0.0.1 -k get_sum_users
+
+
+22
+
+//测试自定义key是否生效. -k 后面是刚刚自定义UserParameter=自定义key名称.
+
+
+			2 配置监控服务器 192.168.2.5
+				2.1 登陆管理页面做如下操作：
+					1 创建监控模板 ATMP1
+					2 创建应用集   yyj1
+					3 创建监控项   名字 对应的命令
+					4 使用新模板ATMP1 监控主机100
+					5 查看监控数据
+

@@ -1,0 +1,91 @@
+2019.11.7　数据库　第二天　命令
+
+1.>desc 库名.表名;                                //查看表的约束条件
+       null    允许为空(默认设置)
+       not null   不允许为空(NULL)
+       key   键值类型
+       default   设置默认值,缺省为NULL
+       extra   额外设置
+
+     create table t1(
+                ->name char(10) not null,
+                     ->age tiny unsigned default 19,
+                            ->class char(7) not null default "nsd1902"
+                         ->;
+2.修改表结构
+  语法结构
+   mysql> alter table 库名.表名 执行动作;
+
+执行动作:(add       添加字段
+        modify    修改字段类型
+        change     修改字段名
+        drop       删除字段
+        rename     修改表名)
+
+      a.添加新字段
+       --新字段默认添加在字段末尾
+       mysql>alter table 库名.表名
+             add  字段名 类型(宽度) 约束条件
+                [after  字段名 | first];
+       b.修改字段类型
+         基本用法
+         --修改的字段类型不能与存储的数据冲突
+         mysql>
+
+
+
+3.primary key主键
+使用规则:
+      --字段值不允许重复,且不允许赋值NULL值.
+      --一个字段只能有一个primary key字段.
+      --多个字段都作为主键,称为复合主键.必须一起创建.(字段的值不同时重复,就可以的)
+      --主键字段的标识是PRI
+      --主键通常与auto_increment连用,实现字段自动增长赋值.而且必须为数字.
+   (自动增加的,是在原来记录表格里最大的值.基础上进行自动增加),而且把表格中的记录全部删除后,再增加字段,自动增加也是在原来最大的值,基础上自动增加1.
+   
+ --通常主键是让唯一标识记录的字段设置为主键.
+
+   1)新建表时,两种方式建立主键.
+ a  .create table t2( name char(10) primary key,class char(16));
+ b   create table t3 ( name char (10),class char(16),primary key(name));
+
+   2)在已经有的表中创建主键的前提(已经有的数据不为空,并且不能够重复)
+   a. alter table 表名 add primary key(字段名);
+   3) 删除主键:
+   b. alter table 表名 drop primary key;
+
+
+一\  foreign key外键
+
+
+    外键功能: --插入记录时,字段值在另外一个表字段值范围内选择.
+    使用规则:
+           ---表存储引擎必须是innodb(参照表和 这张表 必须都是innodeb)
+            --字段类型要一致
+           ---被参考字段必须要是索引类型的一种(primary key)
+
+
+#show create table gz \G;
+*************************** 1. row ***************************
+       Table: gz
+Create Table: CREATE TABLE `gz` (
+  `gz_id` int(11) DEFAULT NULL,
+  `gz` int(11) DEFAULT NULL,
+  KEY `gz_id` (`gz_id`),
+  CONSTRAINT `gz_ibfk_1` FOREIGN KEY (`gz_id`) REFERENCES `yg` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+
+alter table gz drop foreign key gz_ibfk_1 ; 删除外键.
+
+alter table gz add froreign key(gz_id) references yg(id)
+          on delete  cascade on update cascade; 增加外键.
+
+
+
+(注意事项:
+          NULL 在本表也可以赋值进去,因为他没有赋值给新表.也没有超出被参照表.为了防止重复和空值,可以把这个外键设置为主键,可以避免.在本表进行约束.)
+
+
+
+
+ 

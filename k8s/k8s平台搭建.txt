@@ -1,0 +1,491 @@
+https://www.cnblogs.com/tylerzhou/p/10969072.html
+https://www.elastic.co/guide/en/logstash/current/index.html
+http://www.yunweipai.com/category/tiku
+https://support.huaweicloud.com/ecs_faq/ecs_faq_1003.html
+# 什么是k8s
+
+- **Kubernetes**的名字来自希腊语，意思是“舵手” 或 “领航员”。K8s是将8个字母“ubernete”替换为“8”的缩写。
+- K8S的创造者，是众人皆知的行业巨头——**Google**。
+- 然而K8S并不是一件全新的发明。它的前身，是Google自己捣鼓了十多年的**Borg系统**。
+- K8S是2014年6月由Google公司正式公布出来并宣布开源的。
+
+# 为什么要使用k8s
+
+- 就在Docker容器技术被炒得热火朝天之时，大家发现，如果想要将Docker应用于具体的业务实现，是存在困难的——编排、管理和调度等各个方面，都不容易。于是，人们迫切需要一套管理系统，对Docker及容器进行更高级更灵活的管理，就在这个时候，K8S出现了
+- Kubernetes是Google 2014年创建管理的，是Google 10多年大规模容器管理技术Borg的开源版本。
+- K8s 是容器集群管理系统，是一个开源的平台，可以实现容器集群的自动化部署、自动扩缩容、维护等功能
+
+# 什么时候用
+
+- 快速部署应用
+- 快速扩展应用
+- 无缝对接新的应用功能
+- 节省资源，优化硬件资源的使用
+
+# 在那用
+
+- **可移植**: 支持公有云，私有云，混合云，多重云（multi-cloud）
+- **可扩展**: 模块化, 插件化, 可挂载, 可组合
+- **自动化**: 自动部署，自动重启，自动复制，自动伸缩/扩展
+
+# 怎么用
+
+- **Build, Ship and Run （创建，发送和运行）**
+- **Build once，Run anywhere（搭建一次，到处能用）**
+- Docker技术的三大核心概念，分别是：
+
+1. 镜像（Image）
+2. 容器（Container）
+3. 仓库（Repository）
+
+## k8s 架构
+
+一个K8S系统，通常称为一个**K8S集群（Cluster）**
+
+这个集群主要包括两个部分：
+
+- **一个Master节点（主节点）**
+
+- Master节点包括API Server、Scheduler、Controller manager、etcd。
+
+  ​    API Server是整个系统的对外接口，供客户端和其它组件调用，相当于“营业厅”。
+
+  ​    Scheduler负责对集群内部的资源进行调度，相当于“调度室”。
+
+  ​    Controller manager负责管理控制器，相当于“大总管”。
+
+
+- **一群Node节点（计算节点）**
+
+- Node节点包括**Docker、kubelet、kube-proxy、Fluentd、kube-dns**（可选），还有就是**Pod**。
+
+  ​    **Pod**是Kubernetes最基本的操作单元。
+
+  ​    一个Pod代表着集群中运行的一个进程，它内部封装了一个或多个紧密相关的容器。
+
+  ​    除了Pod之外，K8S还有一个**Service**，一个Service可以看作一组提供相同服务的Pod的对外访问接口
+
+  ​    Docker，不用说了，创建容器的。
+
+  ​    Kubelet，主要负责监视指派到它所在Node上的Pod，包括创建、修改、监控、删除等。
+
+  ​    Kube-proxy，主要负责为Pod对象提供代理。
+
+  ​    Fluentd，主要负责日志收集、存储与查询。
+
+
+
+安装配置
+
+创建虚拟机并配置ｉｐ
+192.168.1.21 node21
+192.168.1.22 node22
+192.168.1.23 node23
+192.168.1.100 registry2
+192.168.1.10 master
+
+1 设置 ip 和主机名
+每台机子hosts  同步如下：
+  /etc/hosts
+vim /etc/hosts 
+# ::1           localhost localhost.localdomain localhost6 localhost6.localdomain6
+127.0.0.1       localhost localhost.localdomain localhost4 localhost4.localdomain4
+192.168.1.21 node21
+192.168.1.22 node22
+192.168.1.23 node23
+192.168.1.100 registry2
+192.168.1.10 master
+
+
+
+2 开启路由转发　　全部主机配置　路由转发功能　查看
+[root@master ~]# sysctl net.ipv4.ip_forward
+net.ipv4.ip_forward = 1
+
+  net.ipv4.ip_forward=1　
+
+3 配置 yum 源
+  RHEL7-extras.iso
+[student@room9pc01 ~]$ cd /linux-soft/04/kubernetes/
+[student@room9pc01 kubernetes]$ ls
+containernetworking-cni-0.6.0-3.el7.x86_64.rpm
+etcd-3.3.11-2.el7.centos.x86_64.rpm
+flannel-0.7.1-4.el7.x86_64.rpm
+kubernetes-1.10.3-0.el7.x86_64.rpm
+kubernetes-client-1.10.3-0.el7.x86_64.rpm
+kubernetes-kubeadm-1.10.3-0.el7.x86_64.rpm
+kubernetes-master-1.10.3-0.el7.x86_64.rpm
+kubernetes-node-1.10.3-0.el7.x86_64.rpm
+[student@room9pc01 kubernetes]$mkdir /var/ftp/kubernetes
+
+[student@room9pc01 kubernetes]cd /var/ftp/kubernetes
+
+[student@room9pc01 kubernetes]createrepo .
+
+
+[root@master ~]# vim /etc/yum.repos.d/local.repo
+[local_repo]
+name=CentOS-$releasever - Base
+baseurl="ftp://192.168.1.254/centos-1804"
+enabled=1
+gpgcheck=1
+
+[local_extras]
+name=CentOS-$releasever - Extras
+baseurl="ftp://192.168.1.254/extras"
+enabled=1
+gpgcheck=0
+
+[kub]
+name=kubs
+baseurl="ftp://192.168.1.254/kubernetes"
+enabled=1
+gpgcheck=0
+
+
+4 配置node21,node22,node23,registry2,四台服务器，安装安装docker,在registry2服务器上配置私有仓库 registry [repo]
+－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+在node21 配置，如下（在　node21,node22也是如下配置）　　　　　安装docker
+a.
+[root@node21 ~]# yum -y install docker
+[root@node21 ~]# vim /etc/sysconfig/docker　//配置定位私有仓库
+ 13 ADD_REGISTRY='--add-registry registry2:5000'
+ 24 INSECURE_REGISTRY='--insecure-registry registry2:5000'
+
+ [root@node21 ~]#systemctl restart docker
+ [root@node21 ~]#systemctl enable docker
+
+
+－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+
+ [root@registry2 ~]#   yum install docker-distribution
+ [root@registry2 ~]#   yum start   docker-distribution
+  [root@registry2 ~]#  yum enable  docker-distribution
+  管理镜像使用 docker
+  [root@registry2 ~]#   yum install docker
+      /etc/sysconfig/docker
+          
+[student@room9pc01 ~]$ cd /linux-soft/04/docker
+[student@room9pc01 docker]$ ls
+baseos.yaml          kubernetes-dashboard.tar  redis.tar
+centos.tar           nginx.tar                 registry.tar
+kube-dashboard.yaml  pod-infrastructure.tar    ubuntu.tar                                // 上传镜像
+
+[student@room9pc01 docker]$ scp centos.tar kubernetes-dashboard.tar
+ pod-infrastructure.tar   root@192.168.1.100:/root/
+
+[root@registry2 ~]# ls
+centos.tar  kubernetes-dashboard.tar  pod-infrastructure.tar
+[root@registry2 ~]#docker load -i centos.tar 
+[root@registry2 ~]#docker load -i kubernetes-dashboard.tar 
+[root@registry2 ~]#docker load -i pod-infrastructure.tar 
+[root@registry2 ~]#docker push kubernetes-dashboard-amd64:v1.8.3  //上传到私库
+ [root@registry2 ~]#docker push pod-infrastructure:latest
+ [root@registry2 ~]#docker push centos:latest
+[root@registry2 ~]# curl  http://registry2:5000/v2/_catalog　　　//验证私库内容
+{"repositories":["centos","kubernetes-dashboard-amd64","pod-infrastructure"]}
+
+－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+5 配置 kubernets - master
+   package:
+     etcd
+     kubernetes-master
+     kubernetes-client
+   开启四个软件服务名称service:
+     kube-apiserver
+     kube-controller-manager
+     kube-scheduler
+     etcd
+   conf:
+     /etc/etcd/etcd.conf
+        6: ETCD_LISTEN_CLIENT_URLS="http://192.168.1.10:2379"
+     /etc/kubernetes/config
+       22: KUBE_MASTER="--master=http://192.168.1.10:8080"
+     /etc/kubernetes/apiserver
+        8: KUBE_API_ADDRESS="--insecure-bind-address=0.0.0.0"
+       17: KUBE_ETCD_SERVERS="--etcd-servers=http://192.168.1.10:2379"
+       23: 删除 ServiceAccount 参数
+     /etc/kubernetes/controller-manager
+     /etc/kubernetes/scheduler
+    验证
+     kubectl get cs
+     kubectl get csr
+     kubectl get node
+－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+[student@room9pc01 ]$ mkdir /var/ftp/kubernetes
+[student@room9pc01 docker]$ cd /linux-soft/04/kubernetes/
+[student@room9pc01 kubernetes]$ ls
+containernetworking-cni-0.6.0-3.el7.x86_64.rpm
+etcd-3.3.11-2.el7.centos.x86_64.rpm
+flannel-0.7.1-4.el7.x86_64.rpm
+kubernetes-1.10.3-0.el7.x86_64.rpm
+kubernetes-client-1.10.3-0.el7.x86_64.rpm
+kubernetes-kubeadm-1.10.3-0.el7.x86_64.rpm
+kubernetes-master-1.10.3-0.el7.x86_64.rpm
+kubernetes-node-1.10.3-0.el7.x86_64.rpm
+[student@room9pc01 kubernetes]$ scp * /var/ftp/kubernetes/
+[student@room9pc01 kubernetes]$ cd /var/ftp/kubernetes/
+[student@room9pc01 kubernetes]$ ls
+containernetworking-cni-0.6.0-3.el7.x86_64.rpm
+etcd-3.3.11-2.el7.centos.x86_64.rpm
+flannel-0.7.1-4.el7.x86_64.rpm
+kubernetes-1.10.3-0.el7.x86_64.rpm
+kubernetes-client-1.10.3-0.el7.x86_64.rpm
+kubernetes-kubeadm-1.10.3-0.el7.x86_64.rpm
+kubernetes-master-1.10.3-0.el7.x86_64.rpm
+kubernetes-node-1.10.3-0.el7.x86_64.rpm
+
+[student@room9pc01 kubernetes]$ createrepo .　　//创建kubernetes yum仓库
+Spawning worker 0 with 2 pkgs
+Spawning worker 1 with 2 pkgs
+Spawning worker 2 with 2 pkgs
+Spawning worker 3 with 2 pkgs
+Workers Finished
+Saving Primary metadata
+Saving file lists metadata
+Saving other metadata
+Generating sqlite DBs
+Sqlite DBs complete
+[root@master ~]# vim /etc/yum.repos.d/local.repo
+[local_repo]
+name=CentOS-$releasever - Base
+baseurl="ftp://192.168.1.254/centos-1804"
+enabled=1
+gpgcheck=1
+
+[local_extras]
+name=CentOS-$releasever - Extras
+baseurl="ftp://192.168.1.254/extras"
+enabled=1
+gpgcheck=0
+
+[kub]
+name=kubs
+baseurl="ftp://192.168.1.254/kubernetes"
+enabled=1
+gpgcheck=0
+
+[root@master ~]# yum -y install kubernetes-master.x86_64  etcd kubernetes-client
+
+[root@master ~]#vim /etc/etcd/etcd.conf
+ 6: ETCD_LISTEN_CLIENT_URLS="http://192.168.1.10:2379"
+[root@master ~]# vim /etc/kubernetes/config
+22: KUBE_MASTER="--master=http://192.168.1.10:8080":
+[root@master ~]#vim /etc/kubernetes/apiserver
+  8: KUBE_API_ADDRESS="--insecure-bind-address=0.0.0.0"
+   17: KUBE_ETCD_SERVERS="--etcd-servers=http://192.168.1.10:2379"
+    23: 删除 ServiceAccount 参数
+
+[root@master ~]# systemctl enable etcd kube-apiserver kube-controller-manager kube-scheduler
+[root@master ~]#  systemctl start etcd kube-apiserver kube-controller-manager kube-scheduler
+[root@master ~]#  systemctl status etcd kube-apiserver kube-controller-manager kube-scheduler   //查看四个服务都是active (running)
+ 
+[root@master ~]#  kubectl get cs     验证//是否正常
+NAME                 STATUS    MESSAGE             ERROR
+controller-manager   Healthy   ok                  
+scheduler            Healthy   ok                  
+etcd-0               Healthy   {"health":"true"}  
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+
+6 配置 kubernets - minion     node21  node22  node23节点配置
+  安装package:
+     kubernetes-node 
+     docker 
+  开放service软件名:
+     kubelet
+     kube-proxy
+     docker
+  修改配置conf:
+     /etc/sysconfig/docker
+        4: 添加参数 --insecure-registry=192.168.1.100:5000 --add-registry 192.168.1.100:5000
+     /etc/kubernetes/config
+       22: KUBE_MASTER="--master=http://192.168.1.10:8080"
+     /etc/kubernetes/kubelet
+        5: KUBELET_ADDRESS="--address=0.0.0.0"
+       11: KUBELET_HOSTNAME="--hostname-override=本机名称"
+       14: 添加 --kubeconfig=/etc/kubernetes/kubelet.kubeconfig 
+                --pod-infra-container-image=pod-infrastructure:latest
+     /etc/kubernetes/kubelet.kubeconfig
+apiVersion: v1
+kind: Config
+clusters:
+  - cluster:
+      server: http://192.168.1.10:8080                ###Master的IP，即自身IP
+    name: local
+contexts:
+  - context:
+      cluster: local
+    name: local
+current-context: local
+
+--------------------------------------------------------------------------------------------------------------------------
+[root@node21 ~]#  yum -y install kubernetes-node
+
+[root@node21 ~]# vim /etc/kubernetes/config 
+22: KUBE_MASTER="--master=http://192.168.1.10:8080"
+
+[root@node21 ~]# vim /etc/kubernetes/kubelet
+ 5: KUBELET_ADDRESS="--address=0.0.0.0"
+       11: KUBELET_HOSTNAME="--hostname-override=node21" //每个节点配置就这个参数不同
+KUBELET_ARGS="--cgroup-driver=systemd --fail-swap-on=false --kubeconfig=/etc/kubernetes/kubelet.kubeconfig --pod-infra-container-image=registry2:5000/pod-infrastructure:latest" //  指定添加kubelet.kubeconfig 路径, 添加pod 实际 私有仓库能够pull的准确位置
+[root@node21 ~]# vim /etc/kubernetes/kubelet.kubeconfig
+apiVersion: v1
+kind: Config
+clusters:
+  - cluster:
+      server: http://192.168.1.10:8080
+    name: local
+contexts:
+  - context:
+      cluster: local
+    name: local
+current-context: local
+
+
+ [root@node21 ~]# scp /etc/kubernetes/config root@192.168.1.22:/etc/kubernetes/config 
+ [root@node21 ~]# scp /etc/kubernetes/config root@192.168.1.23:/etc/kubernetes/config 
+ [root@node21 ~]# scp /etc/kubernetes/kubelet root@192.168.1.23:/etc/kubernetes/kubelet   //记得到相应服务器修改 主机名
+[root@node21 ~]# scp /etc/kubernetes/kubelet root@192.168.1.22:/etc/kubernetes/kubelet //记得到相应服务器修改 主机名
+ [root@node21 ~]# scp /etc/kubernetes/kubelet.kubeconfig root@192.168.1.22:/etc/kubernetes/ 
+ [root@node21 ~]# scp /etc/kubernetes/kubelet.kubeconfig root@192.168.1.23:/etc/kubernetes/
+   [root@node21 ~]# systemctl enable kubelet kube-proxy  //node22,node23也是同样操作
+   [root@node21 ~]# systemctl start kubelet kube-proxy    //node22,node23也是同样操作
+
+
+-----------------------------------------------------------------------------------------------------------------------
+[root@master ~]#  kubectl get node          //在master查看,三个节点是否存在验证
+NAME      STATUS    ROLES     AGE       VERSION
+node21    Ready     <none>    5h        v1.10.3
+node22    Ready     <none>    5h        v1.10.3
+node23    Ready     <none>    5h        v1.10.3
+----------------------------------------------------------------------------------------------------------------------
+
+
+7 网络
+   master:
+     /etc/etcd/etcd.conf
+     ETCD_LISTEN_CLIENT_URLS="http://0.0.0.0:2379"
+
+     etcdctl mk /atomic.io/network/config '{"Network": "10.254.0.0/16", "Backend": {"Type": "vxlan"}}'
+
+   minion:
+     package: flannel
+     /etc/sysconfig/flanneld
+     FLANNEL_ETCD_ENDPOINTS="http://192.168.1.10:2379"
+  
+     systemctl restart flanneld docker
+
+--------------------------------------------------------------------------------------------------------------------------
+[root@master ~]# vim /etc/etcd/etcd.conf 
+
+ 6 ETCD_LISTEN_CLIENT_URLS="http://0.0.0.0:2379"
+
+[root@master ~]#etcdctl mk /atomic.io/network/config '{"Network": "10.254.0.0/16", "Backend": {"Type": "vxlan"}}'  //定义vxlan网络
+[root@master ~]#yum -y install flannel
+ [root@master ~]# vim /etc/sysconfig/flanneld 
+  4 FLANNEL_ETCD_ENDPOINTS="http://192.168.1.10:2379"
+  8 FLANNEL_ETCD_PREFIX="/atomic.io/network"
+ [root@master ~]# systemctl enable flanneld 
+   [root@master ~]# systemctl start flanneld 
+  [root@master ~]# ifconfig   //查看新增加了flanne网卡
+flannel.1: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1450
+        inet 10.254.96.0  netmask 255.255.255.255  broadcast 0.0.0.0
+        ether 62:f7:ff:71:67:f6  txqueuelen 0  (Ethernet)
+------
+在每个节点node21 node22 node23做如下操作,一定得先把docker先停了,先启动flanneld服务,然后再启动docker服务 ,最终验证相关 ,在每天节点上启动centes系统,系统能够ping
+------
+[root@node21 ~]# yum -y install flannel
+[root@node21 ~]# vim /etc/sysconfig/flanneld 
+  4 FLANNEL_ETCD_ENDPOINTS="http://192.168.1.10:2379"
+ [root@node21 ~]# systemctl stop docker
+ [root@node21 ~]# systemctl restart flanneld
+[root@node21 ~]#systemctl restart docker
+[root@node21 ~]docker run -it centos
+   [root@node21~]  docker ps  
+e60650a7d519        centos               
+[root@node21 ~]# docker inspect e6  //查看 ip
+
+"IPAddress": "10.254.31.2"
+===================================================                                              
+  8 创建容器，测试
+  kubectl create -f baseos.yaml
+  测试
+     kubectl get pod -o wide
+     kubectl exec -it test-os-3826630470-jc5j4 -- /bin/bash
+  
+  kubectl create -f kube-dashboard.yaml
+
+==========================================
+[student@room9pc01 docker]$ cd /linux-soft/04/docker
+[student@room9pc01 docker]$ scp baseos.yaml kube-dashboard.yaml root@192.168.1.10:/root/
+baseos.yaml                                   100% 1054    56.0KB/s   00:00    
+kube-dashboard.yaml                           100% 1422   589.8KB/s   00:00   
+
+[root@master ~]# vim baseos.yaml 
+---
+apiVersion: extensions/v1beta1         #当前格式的版本
+kind: Deployment                       #当前创建资源的类型， 当前类型是Deployment
+metadata:                              #当前资源的元数据
+  name: test-os                        #当前资源的名字 是元数据必须的项
+spec:                                  #是当前Deployment的规格说明
+  replicas: 2                          #指当前创建的副本数量 默认不填 默认值就为‘1’
+  template:                            #定义pod的模板
+    metadata:                          #当前pod的元数据
+      labels:                          #至少顶一个labels标签，可任意创建一个 key:value
+        app: test_os
+    spec:                              #当前pod的规格说明
+      containers:                      #容器
+      - name: centos                   #是容器的名字容器名字是必须填写的
+        image: registry2:5000/centos:latest   #镜像 镜像的名字和版本私有仓库地址
+        stdin: true
+        tty: true
+
+[root@master ~]# kubectl create -f baseos.yaml
+[root@master ~]# kubectl get pod
+NAME                       READY     STATUS    RESTARTS   AGE
+test-os-6cc86ddd88-fhd55   1/1       Running   0          3h
+test-os-6cc86ddd88-vfcdb   1/1       Running   0          3h
+
+[root@master ~]# vim kube-dashboard.yaml 
+kind: Deployment
+apiVersion: apps/v1beta2
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kube-system
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      k8s-app: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        k8s-app: kubernetes-dashboard
+    spec:
+      containers:
+      - name: kubernetes-dashboard
+        image: registry2:5000/kubernetes-dashboard-amd64:v1.8.3  //私有仓库地址
+        ports:
+        - containerPort: 9090
+          protocol: TCP
+        args:
+          - --apiserver-host=http://192.168.1.10:8080          ###修改为Master的IP
+
+
+ [root@master ~]#  kubectl create -f kube-dashboard.yaml
+
+[root@master ~]# kubectl -n kube-system get pod
+NAME                                    READY     STATUS    RESTARTS   AGE
+kubernetes-dashboard-66cc575d55-cnjpd   1/1       Running   0          3h
+
+验证::
+在真机:http://192.168.1.22:30090 访问这网站
+
+
+
+
+

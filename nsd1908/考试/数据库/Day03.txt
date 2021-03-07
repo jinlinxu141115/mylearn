@@ -1,0 +1,10 @@
+第三天
+01. 导入 /etc/passwd 文件, 表名为Linux_user
+
+02. 导出表Linux_user 中uid小于500的信息
+
+03. 查询出username有4个字符的信息
+
+04. 统计Linux_user表中uid最大值,最小值,平均值
+
+05. 显示gid最大的前三行

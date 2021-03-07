@@ -1,0 +1,470 @@
+2019.11.18　RDBMS　第五天　命令
+
+一.PXC 
+  1.1PXC介绍
+     ..Percona XtraDB Cluster (简称  PXC)
+       --是基于Galera的mysql高可用集群解决方案
+       --Glalera Cluster 是Codership公司开发的一套免费开源高可用方案
+        --PXC集群主要由两部分组成:Percona Server with XtraDB和Write Set Replicaton patches(同步,多主复制插件)
+   1.2PXC特点:
+      --数据强制一致性,无同步延迟
+      --没有主从切换操作,无需使用虚拟IP
+      --支持InnoDB存储引擎
+      --多线程复制
+      --部署使用简单
+      --支持节点字段加入,无需手动拷贝数据  
+
+
+     1.2.1相应端口服务
+     --3306  数据库服务器端口
+    --4444  sst端口   (拷贝时候,端口才可见)
+      --4567   集群通讯端口
+    --4568   IST 端口  (拷贝时候,端口才可见)
+     SST   Statement Snapshot Transfer  全量同步 (首次同步)
+     IST    Incremental State Transfer   增量同步
+
+二. 部署PXC
+
+      2.1部署软件
+           *1* 安装软件
+percona-xtrabackup-24-2.4.13-1.el7.x86_64.rpm  //在线热备程序
+qpress-1.1-14.11.x86_64.rpm    //递归压缩程序  增加复制速度.
+Percona-XtraDB-Cluster-5.7.25-31.35-r463-el7-x86_64.rpm //集群服务器程序
+
+           *2*配置服务
+          相关配置文件
+         --/etc/percona_xtradb_cluster.conf.d /所在目录
+          配置文件说明
+         --mysql.cnf    //数据库服务器运行参数配置文件
+          --mysqld_safe.cnf   //Percona Server 5.7配置文件,软件程序安装目录
+            --wsrep.cnf          //pxc集群配置文件
+  [client]
+socket=/var/lib/mysql/mysql.sock
+
+[mysqld]
+server-id=71
+datadir=/var/lib/mysql
+socket=/var/lib/mysql/mysql.sock
+log-error=/var/log/mysqld.log
+pid-file=/var/run/mysqld/mysqld.pid
+log-bin
+log_slave_updates
+expire_logs_days=7
+
+            *3*启动服务器
+            --启动集群服务
+[root@pxcnode71 ~]# systemctl start mysql@bootstrap.service
+            --添加授权用户
+ mysql> grant reload,lock tables ,replication client,process on *.* to sstuser@"localhost" identified by "123qqq...A";
+          //reload:导入数据,lock tables :锁表 ,replication client监控
+process 可以停止程序
+
+
+             .在其它2台服务器行执行(三台服务器,PXC设置为主主主关系)
+              --启动数据库服务
+  ]# systemctl start mysql
+              --会自动同步71主机的授权用户及管理员root密码
+
+
+             *4*测试配置
+           查看集群信息(可在任意一台数据库服务器执行)
+           --执行命令  show status like "%wsrep%";
+           --相关参数
+             
+            *5*测试集群功能
+         --在任意一台服务器上添加访问数据的授权用户
+          --在客户端使用授权用户连接任意数据库服务器都可以存储数据,且可以查看同样数据
+          --建表是,必须有主键字段 .自加步长根据数据集群台数.如果是3,auto_increment自动增加是+3为单位.
+
+
+
+三.MySQL 存储引擎 
+
+发动引擎,搜索引擎(),
+xxx /var/www/html/  每个文件都有各自处理功能.
+
+3.1服务的功能模块(组成结构)
+ A)..management Serverice&util 管理工具 例如在主机上访问数据库的命令.
+  B).Connection Pool: 连接池 主要功能客户端访问数据库功能.(进行认证用户密码,查看连接数据库服务器哪个空闲程序处理这个请求.)
+   C)..SQL Interface 数据库接口 
+D)..Parser  :分析器 分析你sql语法是否正确给予报错
+E)..Optimilizer:优化器 连接数据库,例如多表,嵌套查询,给查询数据时,进行优化程序访问速度会更快.(节省系统资源)
+F)..Caches &Buffers:  查询缓存.存储曾经访问到的数据.查询缓存空间,机子物理内存划分. 查数据流程a.查询缓存.如果有返回客户端.b.如果没有,再访问硬盘数据数据.
+
+G)存储引擎:在硬盘上存储数据  表.ibd ,对表的操作,就会启动存储引擎进行工作.
+
+H)文件系统 mkfs  
+
+
+3.2存储引擎概述
+
+  .作为可插拔的组件功能
+  --MySQL 服务器软件自带的功能程序,处理表的处理器
+ --不同的存储引擎有不同的功能和数据存储方式
+  --MySQL 5.0/5.1   -->  MyISAM
+   --MySQL 5.5 /5.6   -->InnoDB
+
+    .列出可用的存储引擎类型
+   --show engines
+
+MyIsam , Mrg_Myisam, InnoDB, Memory, Blackhole, CSV, Performance_Schema, Archive, Federated
+
+mysql> show engines;
++--------------------+---------+----------------------------------------------------------------+--------------+------+------------+
+| Engine             | Support | Comment                                                        | Transactions | XA   | Savepoints |
++--------------------+---------+----------------------------------------------------------------+--------------+------+------------+
+| InnoDB             | DEFAULT | Supports transactions, row-level locking, and foreign keys     | YES          | YES  | YES        |
+| MRG_MYISAM         | YES     | Collection of identical MyISAM tables                          | NO           | NO   | NO         |
+| MEMORY             | YES     | Hash based, stored in memory, useful for temporary tables      | NO           | NO   | NO         |
+| BLACKHOLE          | YES     | /dev/null storage engine (anything you write to it disappears) | NO           | NO   | NO         |
+| MyISAM             | YES     | MyISAM storage engine                                          | NO           | NO   | NO         |
+| CSV                | YES     | CSV storage engine                                             | NO           | NO   | NO         |
+| ARCHIVE            | YES     | Archive storage engine                                         | NO           | NO   | NO         |
+| PERFORMANCE_SCHEMA | YES     | Performance Schema                                             | NO           | NO   | NO         |
+| FEDERATED          | NO      | Federated MySQL storage engine                                 | NULL         | NULL | NULL       |
++--------------------+---------+----------------------------------------------------------------+--------------+------+------------+
+
+Transactions:事务 指sql访问,de建立连接,到操作数据,断开连接.整个操作流程成为事务.
+事务回滚:对数据操作失败,可以进行撤回.恢复到事务执行前数据.
+
+XA .Savepoint :类似算法.
+查看数据服务支持存储引擎 show engines;
+查看表用的数据库引擎:show create table 表名 ;
+
+常用的存储引擎: myisam存储引擎. innodb存储引擎
+
+3.3 配置存储引擎 
+
+3.3.1修改表存储引擎 : 建表是手动指定 genine=innodb;
+     crente talbe d1 (name char(10))engine =存储引擎名;
+
+  --未指定时,使用默认存储引擎
+  --alter table 表名 engine=存储引擎名;
+
+
+
+3.3.2修改服务存储引擎:设置数据库服务使用的存储引擎
+
+  --修改/etc/my.cnf配置
+vim  /etc/my.cnf
+
+default-storage-engine=存储引擎
+
+systemctl restart mysqld
+
+
+
+3.4存储引擎特点
+------------------------------------------------------------------------------------------------------------------------------------
+
+MyISAM存储引擎
+  主要特点:
+  --支持表级锁  //开销最小的锁策略
+  --不支持事务,事务回滚,外键
+.表文件
+   --表名.frm  //表结构  desc 表;
+   --表名.MYI //表引     存放表索引
+   --表名.MYD  //存放数据文件   
+------------------------------------------------------------------------------------------------------------------------------------
+
+innodb存储引擎
+   主要特点
+   --支持行级锁定  //开销最大的锁策略
+   --支持事务,事务回滚,外键
+
+  .表文件
+  --表名.frm
+  --表名.ibd
+
+.事务日志文件
+
+   --ibdata1
+   --ib_logfile0
+   --ib_logfile1
+回滚,读事务日志文件.
+
+----------------------------------------------------------------------------------------------------------------------------
+MySQLd锁机制:避免并发访问操作数据的冲突性.
+
+.锁粒度(给表加锁时,锁的范围) 
+ 
+ --表级锁: 对整张表加锁(myisam)
+ 
+ --行级锁:仅对被访问的行分别加锁(innodb)
+
+*给表加锁后,在没有释放锁之前,是不允许对表进行访问.
+
+.锁类型
+
+--读锁(共享锁):支持并发读 (select),客户端1在select,还没结束.这时候如果客户端2,客户端3也对该表进行访问.如果是select操作是可以执行,如果是写和update delete的操作 是不允许的.
+
+--写锁(互相锁,排他锁 ,insert,update,delete) :是独占锁,上锁期间其它线程不能读表和写表
+
+
+
+.查看当前锁状态
+
+--show status like "table_lock%";
+mysql> show status like "table_lock%";
+
++-----------------------+-------+
+| Variable_name         | Value |
++-----------------------+-------+
+| Table_locks_immediate | 99    |  //
+| Table_locks_waited    | 0     |  //给表加锁,等待释放的个数.
++-----------------------+-------+
+
+---------------------------------------------------------------------------------------------------------------------
+事务特性 (ACID)
+
+.Atomic : 原子性
+  --事务的整个操作是一个整体,不可分割,要么全部成功,要么全部失败.
+
+.Consistency:一致性
+
+--事务操作的前后,表中的记录没有变化
+
+.IsoLation:隔离性
+-事务操作是相互隔离不受影响的.
+只要没提交.相互不影响.
+.Durability;持久性
+--数据一旦提交,不可改变,永远改变表数据.
+
+
+相关命令:
+mysql> show variables like "autocommit";  //查看提交状态
++---------------+-------+
+| Variable_name | Value |   
++---------------+-------+
+| autocommit    | ON    |  
++---------------+-------+
+1 row in set (0.00 sec)
+
+mysql> set autocommit=off; 关闭自动提交.
+mysql> rollback;  //数据回滚
+
+mysql> commit;  //提交
+//
+mysql> select * from user;
++------+
+| name |
++------+
+| jim  |
+| tom  |
++------+
+2 rows in set (0.00 sec)
+
+
+mysql> delete from user where name in ("jim","tom");
+Query OK, 2 rows affected (0.00 sec)
+
+mysql> select * from user;
+Empty set (0.00 sec)
+
+mysql> rollback;
+Query OK, 0 rows affected (0.04 sec)
+
+mysql> select * from user;
++------+
+| name |
++------+
+| jim  |
+| tom  |
++------+
+
+ ----------------------------------------------------------------------------------------------------------------------
+案例一 部署PXC 服务器71 72 73
+---------------------------------------------------------------------------------------------------------      
+ 1.环境准备: 三台做IP主机名映射.软件安装
+[root@host73 ~]# vim /etc/hosts
+
+192.168.4.71  pxcnode71
+192.168.4.72  pxcnode72
+192.168.4.73  pxcnode73
+[root@pxcnode71 PXC]# yum -y install libev-4.15-1.el6.rf.x86_64.rpm //安装依赖
+[root@pxcnode71 PXC]# yum -y install percona-xtrabackup-24-2.4.13-1.el7.x86_64.rpm // 安装在线热备程序
+
+[root@pxcnode71 PXC]# yum -y install qpress-1.1-14.11.x86_64.rpm
+   //安装递归压缩
+[root@pxcnode71 PXC]# rm -rf *.rpm
+[root@pxcnode71 PXC]# ls
+
+[root@pxcnode71 PXC]# tar -xvf Percona-XtraDB-Cluster-5.7.25-31.35-r463-el7-x86_64-bundle.tar 
+[root@pxcnode71 PXC]# yum -y install Percona-XtraDB-Cluster-*.rpm //集群服务器程序
+
+[root@pxcnode71 PXC]# cd /etc/percona-xtradb-cluster.conf.d/
+[root@pxcnode71 percona-xtradb-cluster.conf.d]# ls
+mysqld.cnf  mysqld_safe.cnf  wsrep.cnf
+
+
+2.修改数据库服务器运行参数配置文件,71,72,73服务器
+
+[root@pxcnode71 percona-xtradb-cluster.conf.d]# ls 
+mysqld.cnf  mysqld_safe.cnf  wsrep.cnf
+[root@pxcnode71 percona-xtradb-cluster.conf.d]# vim mysqld_safe.cnf
+[mysqld]
+server-id=71               //三台服务器ID需要区分.
+datadir=/var/lib/mysql
+socket=/var/lib/mysql/mysql.sock
+log-error=/var/log/mysqld.log
+pid-file=/var/run/mysqld/mysqld.pid
+log-bin
+log_slave_updates
+expire_logs_days=7
+[root@pxcnode73 percona-xtradb-cluster.conf.d]# vim wsrep.cnf
+
+wsrep_cluster_address=gcomm://192.168.4.71,192.168.4.72,192.168.4.73
+//集群成员列表
+wsrep_node_address=192.168.4.73  //本机IP地址
+# Cluster name
+wsrep_cluster_name=pxc-cluster    //集群名称.三台机子一样
+
+wsrep_node_name=pxcnode73            //本机主机名
+wsrep_sst_auth="sstuser:123qqq...A"   //sst数据同步授权用户
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3.启动服务
+在任意一台机子启动都可
+[root@pxcnode71 ~]# systemctl start mysql@bootstrap.service
+[root@pxcnode71 ~]# ls /var/lib/mysql
+auto.cnf         gvwstate.dat    mysqld_safe.pid       pxcnode71-bin.000002
+ca-key.pem       ib_buffer_pool  mysql.sock            pxcnode71-bin.index
+ca.pem           ibdata1         mysql.sock.lock       server-cert.pem
+client-cert.pem  ib_logfile0     performance_schema    server-key.pem
+client-key.pem   ib_logfile1     private_key.pem       sys
+galera.cache     ibtmp1          public_key.pem        xb_doublewrite
+grastate.dat     mysql           pxcnode71-bin.000001
+[root@pxcnode71 ~]# grep pass /var/log/mysqld.log
+2019-11-18T02:51:07.983000Z 1 [Note] A temporary password is generated for root@localhost: KlDmtDT8j9!8 //查看sql默认密码,
+[root@pxcnode71 ~]# mysql -uroot -p'KlDmtDT8j9!8'
+mysql> exit
+Bye
+[root@pxcnode71 ~]# mysql -uroot -p123456 //PXC集群数据库,密码没有策略规定
+mysql> grant reload,lock tables ,replication client,process on *.* to sstuser@"localhost" identified by "123qqq...A";
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3.1 在72,73,启动服务.71上binlog日志里的操作全部会自动同步在72,73,root密码和授权全会自动同步到72,73数据库里.pxc会保证集群数据一致性,每个数据库服务器都是独立,做了相应的互主关系.
+
+[root@pxcnode72 percona-xtradb-cluster.conf.d]# systemctl start mysql
+[root@pxcnode72 percona-xtradb-cluster.conf.d]# mysql -uroot -p123456
+mysql> select host,user from mysql.user;
++-----------+---------------+
+| host      | user          |
++-----------+---------------+
+| localhost | mysql.session |
+| localhost | mysql.sys     |
+| localhost | root          |
+| localhost | sstuser       |
++-----------+---------------+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+4,测试配置.查看集群信息 (任意一台数据库进行)
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mysql> show status like "%wsrep%";
+ wsrep_incoming_addresses         | 192.168.4.73:3306,192.168.4.71:3306,192.168.4.72:3306
+ //成员列表
+ wsrep_cluster_weight             | 3       //集群台数
+ wsrep_cluster_status              Primary       //集群状态                |
+| wsrep_connected                  | ON    //连接状态
+| wsrep_ready                      | ON    //服务状态
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+5.集群功能测试:在任意的数据服务器上操作都可以
+在72数据库服务器上创建表和授权
+----------------------------------------------------------------------------------------------------------------------------------------------------
+mysql> create table db10.t1( id int primary key auto_increment ,
+    -> name char(15) ,
+    -> age tinyint ,
+    -> shool char (20));
+Query OK, 0 rows affected (1.15 sec)
+
+mysql> grant select , insert on db10.* to admin@"%" identified by "123456";
+
+---------------------------------------------------------------------------------------------------------------
+5.1在71或者73都有相应的表和授权(他们互为主主关系)
+------------------------------------------------------------------------------------------------------
+
+
+mysql> select user,host from mysql.user;
++---------------+-----------+
+| user          | host      |
++---------------+-----------+
+| admin         | %         |
+| mysql.session | localhost |
+| mysql.sys     | localhost |
+| root          | localhost |
+| sstuser       | localhost |
++---------------+-----------+
+5 rows in set (0.00 sec)
+mysql> show tables;
++----------------+
+| Tables_in_db10 |
++----------------+
+| t1             |
++----------------+
+1 row in set (0.00 se
+
+
+--------------------------------------------------------------------------------------------------------------------
+5.2 在50客户机进行访问72服务器或者73,71(任意一台都可)
+---------------------------------------------------------------------------------------------------------------------
+
+[root@host50 ~]# mysql -h192.168.4.72 -uadmin -p123456
+mysql> select @@hostname;
++------------+
+| @@hostname |
++------------+
+| pxcnode72  |
++------------+
+
+mysql> insert into t1(name,age,shool) values("jin",21,"terna"),("tom",19,"terna"),("lucy",18,"terna");
+Query OK, 3 rows affected (0.17 sec)
+Records: 3  Duplicates: 0  Warnings: 0
+
+mysql> select * from t1;
++----+------+------+-------+
+| id | name | age  | shool |
++----+------+------+-------+
+|  3 | jin  |   21 | terna |
+|  6 | tom  |   19 | terna |
+|  9 | lucy |   18 | terna |
++----+------+------+-------+
+3 rows in set (0.01 sec)
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+5.3 测试在73数据库服务器停止.(systemcl  stop mysql@bootstrapserver. 71是停止集群的服务..再启动是启动mysql服务器)
+在任意其它数据服务器上查询 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+在71服务器上查看集群状态
+
+mysql> show status like "%wsrep%";
+ wsrep_incoming_addresses         | 192.168.4.71:3306,192.168.4.72:3306
+ //成员列表
+ wsrep_cluster_weight             | 2       //集群台数
+ wsrep_cluster_status              Primary       //集群状态                |
+| wsrep_connected                  | ON    //连接状态
+| wsrep_ready                      | ON    //服务状态
+
+
+在71数据库服务器上插入新数据:
+mysql> insert into db10.t1(name,age,shool) values ("lilei",18,"HNDX"),("meimei",17,"HNDX");
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+5.4然后重启启动73数据库服务器.会读系统 wsrepcnf 集群的配置文件. PXC会自动把73加入到集群,并把宕机是数据同步到73数据库服务器.然后正常启动,可以查看最新的信息.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+[root@host50 ~]# mysql -h192.168.4.73 -uadmin -p123456 -e'select * from db10.t1'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++----+--------+------+-------+
+| id | name   | age  | shool |
++----+--------+------+-------+
+|  3 | jin    |   21 | terna |
+|  6 | tom    |   19 | terna |
+|  9 | lucy   |   18 | terna |
+| 12 | lilei  |   18 | HNDX  |
+| 14 | meimei |   17 | HNDX  |
++----+--------+------+-------+
+
+

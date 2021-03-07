@@ -1,0 +1,634 @@
+2019.11.13　RDBMS　第一天　命令
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+１．主从同步
+２．数据读写分离
+３．数据分片
+４．mysql集群
+５．存储引擎
+－－－－－－－－－－－－－－－－－－－－－－－－
+学习思考:掌握每种服务配置方式，配置出错需要思考如何解决，这种方式的优点
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+一.MySQL 主从同步　　架构　（好处，数据自动备份）
+
+１.1 MySQL主从同步
+　．实现数据自动同步的服务结构．
+　．主服务器：接受客户端访问连接．
+　．从服务器：自动同步主服务器数据．
+
+1.2主从同步原理
+．Master　
+　－必须启动binlog日志
+．Slave
+  -Slave_IO :复制master主机binlog日志文件里的SQL命令到本机的relay-log(中继日志)文件里.
+  -Slave_SQL:执行本机的relay-log文件里的sql语句,实现与Master数据一致.当启动start slave 会自动生成 这两个线程(slave_IO,slave_sql).
+  (MySQL复制其实就是把数据从一个节点(master) 拷贝到另一个节点(slaves), 当然根据应用架构的不同,采用的方式也不同,MySQL服务器之间的复制使用的是二进制日志机制.对master的更新与变动都会作为事件(event)记录在日志中,日志中的信息会随变化的不同被记录成不同的格式.slaves被配置成从master读取日志,并且执行二进制日志中的事件到slave本地数据库.一旦master启动二进制日志功能,那么所有语句操作都会被记录下来,每一个slave会收到一份整个日志内容的拷贝.)
+1.3构建主从同步的思路
+.配置主服务器
+ --启用binlog日志,授权用户,查看binlog日志信息//用户权限 replication slave(复制从属)
+.配置从服务器
+  --设置server_id   //为了区分和主服务器不能一致
+  --确保与主服务器数据一致 
+  --指定主库信息
+  --启动slave程序
+  --查看状态信息
+
+1.3.1指定主服务器信息
+mysql> change master to
+    -> master_host="主库IP地址",　　
+    -> master_user="主库授权用户" ,　　
+    -> master_password="授权用户密码",　　　
+    -> master_log_file="主库日志文件",　　　
+    -> master_log_pos=日志偏移量;　
+mysql> start slave;　　启动slave进程（从服务器上会自动生成IO线程，SQL线程）
+mysql> show slave status \G;
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for master to send event 
+                  Master_Host: 192.168.4.51　　　　　主库ＩＰ地址
+                  Master_User: repluser
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: master51.000001
+          Read_Master_Log_Pos: 441
+               Relay_Log_File: host52-relay-bin.000002 中继文件名
+                Relay_Log_Pos: 319
+        Relay_Master_Log_File: master51.000001
+             Slave_IO_Running: Yes　　　　　　IQ线程已运行
+            Slave_SQL_Running: Yes　　　　　　sql线程已经运行
+=======================================================
+1.4 在从服务器/var/lib/mysql/文件夹上,自动生成一下四个文件:
+master.info            主库信息
+relay-log.info         中继日志信息   记录当前服务器,(现在用的,中继日志名,和现在的偏移量)
+主机名-relay-bin.xxxxx  中继日志        默认只保存最近两个日志文件
+主机名-relay-bin.index  索引文件       记录当前已有的中继日志的.(中继日志名)
+====================================
+删除以上四个文件,可以把从机服务器变成 原来默认的服务器.
+有4个文件,就是从服务器必备条件
+====================================
+
+1.5:主从同步结构
+
+.基本应用:
+ -- 单向复制 : 一主 <----  一从
+            缺点:单点风险,每个点出现故障,都会出现数据丢失.
+.扩展应用:
+  --一主多从: 从 ----> 主<-------从  缺点:当在从服务器写入数据数,其它从服务器没有记录这些数据
+                        .
+                       从
+  ---链式复制: 主<------从1 <------从2  优势:数据有双备份,在从1写时,从2也会备份数据.
+  --互为主从:主<---->主
+
+1.6复制模式介绍
+
+.异步复制(Asynchronous replication)
+ --主执行完一次事务后,立即将结果返给客户端,并不关心从库是否已经接收并处理.
+  缺点:不能保证,从服务库里的数据具有一致的完整性.
+  优点:客户访问,反馈速度快,提高体验感.
+.全同步复制(Fully synchronous replication)
+--当主库执行完一次事务,且所有从库都执行了该事务后才将结果返回给客户端.
+   缺点: 客户访问的响应时间比较长,体验感不好.
+   优点:保证主和每个从服务器,的数据都是一致的完整性.
+ .半同步复制(Semisychronous replication)
+  -介于异步复制和全同步复制之间.
+  -主库在执行玩一次事务后,等待至少一个从库接收到并写到relay log 中才将结果返回给客户端.
+   优点:综合异步复制和全同步复制的优点.
+
+－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－--
+案例 一.  51服务器为主服务器. 52服务器为从服务器
+--------------------------------------------------------------------------------------------------------------------------------
+a)配置主服务器,启动binlog日志,并重启服务
+[root@host51 ~]# vim /etc/my.cnf
+[mysqld]
+log_bin=master51     //启用binlog日志
+server_id=51        //指定服务器ID号
+wq
+[root@host51 ~]#systemctl restart mysqld
+查看binlog日志(查看主服务器的日志文件名和起始的偏移量)
+mysql> show master status;  //查看当前主服务器上(日志文件，和偏移量)
++-----------------+----------+--------------+------------------+-------------------+
+| File            | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++-----------------+----------+--------------+------------------+-------------------+
+| master51.000001 |      154 |              |                  |                   |
++-----------------+----------+--------------+------------------+-------------------+
+1 row in set (0.00 sec)
+b)授权用户,replication slave权限(复制从属)
+
+mysql> grant replication slave on *.* to repluser@"%" identified by "123qqq...A"; 
+
+－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+a)配置52从服务器 
+[root@host52 ~]# vim /etc/my.cnf  
+[mysqld]
+ server_id=52         //指定 server_id,不允许和主库server_id值相同
+#wq
+[root@host52 ~]# systemctl restart mysqld
+[root@host52 ~]# mysql -uroot -p123456
+mysql> show slave status;　　　／／查看51服务器数据库 是否是从服务器?
+Empty set (0.00 sec)
+b)指定主服务器信息
+mysql> change master to
+    -> master_host="192.168.4.51",　　主库ｉｐ地址
+    -> master_user="repluser" ,　　　　　主库授权用户
+    -> master_password="123qqq...A",　　　授权用户密码
+    -> master_log_file="master51.000001",　　　主库日志文件
+    -> master_log_pos=441;　　备份起始的日志偏移量
+Query OK, 0 rows affected, 2 warnings (0.26 sec)
+
+mysql> start slave;　　启动slave进程（52从服务器上会自动生成ＩＯ线程，ｓｑｌ线程）
+Query OK, 0 rows affected (0.01 sec)
+（如果有问题，排除，必须暂停　ｓｔｏｐ　ｓｌａｖｅ　然后再去查看上面命令）
+mysql> show slave status \G;
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for master to send event 
+                  Master_Host: 192.168.4.51　　　　　主库ＩＰ地址
+                  Master_User: repluser
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: master51.000001
+          Read_Master_Log_Pos: 441
+               Relay_Log_File: host52-relay-bin.000002 中继文件名
+                Relay_Log_Pos: 319
+        Relay_Master_Log_File: master51.000001
+             Slave_IO_Running: Yes　　　　　　ＩＱ线程已运行
+            Slave_SQL_Running: Yes　　　　　　ＳＱＬ线程已经运行
+=======================================================
+验证方法一.51主服务器
+mysql> create database db6;
+Query OK, 1 row affected (0.04 sec)
+mysql> create table db6.t1(id int);
+Query OK, 0 rows affected (0.22 sec)
+mysql> insert into db6.t1 values(99);
+Query OK, 1 row affected (0.07 sec)
+mysql> insert into db6.t1 values(95);
+Query OK, 1 row affected (0.04 sec)
+mysql> insert into db6.t1 values(91);
+Query OK, 1 row affected (0.03 sec)
+mysql> select * from db6.t1;
++------+
+| id   |
++------+
+|   99 |
+|   95 |
+|   91 |
++------+
+到52从服务器,上看是否有数据.
+mysql> select * from db6.t1;
++------+
+| id   |
++------+
+|   99 |
+|   95 |
+|   91 |
++------+
+3 rows in set (0.00 sec)
+
+方法二:51主服务器授权给,50客户端服务器一个访问权限
+mysql> grant select ,insert on db6.* to admin@"%" identified by "123qqq...A"; (从服务器上也能看到授权用户信息)
+
+
+[root@host50 ~]# mysql -h192.168.4.51 -uadmin -p123qqq...A
+mysql> insert into db6.t1 values (99);
+Query OK, 1 row affected (0.04 sec)
+
+mysql> insert into db6.t1 values (998);
+Query OK, 1 row affected (0.04 sec)
+[root@host50 ~]# mysql -h192.168.4.52 -uadmin -p123qqq...A -e'select * from db6.t1'           //到52服务器上查看是否有,插入数据.
+mysql: [Warning] Using a password on the command line interface can be insecure.
++------+
+| id   |
++------+
+|   99 |
+|   95 |
+|   91 |
+|   99 |
+|  998 |
++------+
+===================================================
+A)排错时间:
+slave_IO_出错
+利用命令: mysql> show slave status:
+Last_IO_Errno: 0
+Last_IO_Error: 
+Last_SQL_Errno: 0
+Last_SQL_Error: 
+查看错误.提示server-uuid冲突
+修改地方:
+ cat /var/lib/mysql/auto.cnf
+[auto]
+server-uuid=修改成与主服务器上不一致.
+
+===================================================
+
+
+案例二 ,配置一主多从, 把 服务器53数据库也设置为 51的从服务器.
+======================================================
+一.首先保持服务器53 和服务器51 的数据一致性.
+[root@host51 ~]# mysqldump -uroot -p123456  --master-data db6 > /root/db6.sql      //进行完全备份,51服务器上的数据库里 加入--master-data ,让备份文件记录当前日志文件名(master51.000001,以及记录最后偏移量.MASTER_LOG_POS=2287),
+mysqldump: [Warning] Using a password on the command line interface can be insecure.
+[root@host51 ~]# scp /root/db6.sql  root@192.168.4.53:/opt/
+              //把完全备份发给,53服务器器.
+
+a)配置53从服务器设置.
+[root@host53 ~]# mysql -uroot -p123456
+mysql> create database db6;
+[root@host53 ~]# mysql -uroot -p123456 db6 < /opt/db6.sql //导入db6库数据.同步51完全备份. 
+[root@host53 ~]# vim /etc/my.cnf  //配置server_id
+[mysqld]
+ server_id=53
+#wq
+[root@host53 ~]# systemctl restart mysqld
+
+mysql> show slave status;　　　／／查看是否是从服务器
+Empty set (0.00 sec)
+[root@host53 opt]# grep master51 /opt/db6.sql 
+CHANGE MASTER TO MASTER_LOG_FILE='master51.000001', MASTER_LOG_POS=2287;
+//查看拷贝完全备份 , 备份日志文件名(master51.000001).以及最后偏移量.MASTER_LOG_POS=2287) 
+b)指定主服务器信息
+mysql> change master to
+    -> master_host="192.168.4.51",　　主库ｉｐ地址
+    -> master_user="repluser" ,　　　　　主库授权用户
+    -> master_password="123qqq...A",　　　授权用户密码
+    -> master_log_file="master51.000001",　　　主库日志文件
+    -> master_log_pos=2287;　　备份起始的日志偏移量（如果主从不一致，
+Query OK, 0 rows affected, 2 warnings (0.26 sec)
+
+mysql> start slave;　　　　　启动slave进程（从服务会生成，ＩＯ线程，ｓｑｌ线程）
+Query OK, 0 rows affected (0.01 sec)
+（如果有问题，排除，必须暂停　ｓｔｏｐ　ｓｌａｖｅ　然后再去查看上面命令）
+mysql> show slave status \G;
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for master to send event 
+                  Master_Host: 192.168.4.51　　　　　主库ＩＰ地址
+                  Master_User: repluser
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: master51.000001
+          Read_Master_Log_Pos: 441
+               Relay_Log_File: host52-relay-bin.000002 中继文件名
+                Relay_Log_Pos: 319
+        Relay_Master_Log_File: master51.000001
+             Slave_IO_Running: Yes　　　　　　ＩＱ线程已运行
+            Slave_SQL_Running: Yes　　　　　　ＳＱＬ线程已经运行
+========================================================
+
+
+
+
+案例三. 设置 主从从模式 : 53主,54,主从  ,55,从.
+=================================================
+53主服务器配置,还原为原始的mysql 服务器
+---------------------------------------------------------------------------------------------------
+a)把53从服务器 还原为  原始的 mysq服务器
+[root@host53 ~]# systemctl stop mysqld
+[root@host53 ~]# cd /var/lib/mysql/
+[root@host53 mysql]# ls
+auto.cnf         host53-relay-bin.000001  ib_logfile1         relay-log.info
+ca-key.pem       host53-relay-bin.000002  master.info         server-cert.pem
+ca.pem           host53-relay-bin.index   mysql               server-key.pem
+client-cert.pem  ib_buffer_pool           performance_schema  sys
+client-key.pem   ibdata1                  private_key.pem
+db6              ib_logfile0              public_key.pem
+[root@host53 mysql]# rm -rf master.info relay-log.info 
+[root@host53 mysql]# rm -rf host53-relay-bin.*
+[root@host53 mysql]# systemctl start mysqld
+
+b)把53服务器配置为主服务器:
+53] # vim /etc/my.cnf
+[mysqld]
+log_bin=master53
+server_id=53
+wq
+]# systemctl restart mysqld
+查看binlog日志(日志文件名和起始的偏移量)
+mysql> show master status;  //查看当前主服务器上　日志文件，和偏移量
++-----------------+----------+--------------+------------------+-------------------+
+| File            | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++-----------------+----------+--------------+------------------+-------------------+
+| master53.000001 |      154 |              |                  |                   |
++-----------------+----------+--------------+------------------+-------------------+
+1 row in set (0.00 sec)
+b)授权用户,replication slave权限
+
+mysql> grant replication slave on *.* to repluser@"%" identified by "123qqq...A";
+===================================================
+c)配置54服务器 (53服务器从,也是55的主):两种配置都需要有.
+mysql> show slave status;
+Empty set (0.00 sec)
+
+mysql> show master status;
+Empty set (0.00 sec)
+54] # vim /etc/my.cnf
+[mysqld]
+log_bin=master54    //配置主服务器
+server_id=54
+  //允许级联复制,开启级联功能，能够将主服务的数据复制过程记录到本机的二进制日志文件中，在复制给从服务器
+wq
+
+]# systemctl restart mysqld
+[root@host54 ~]# mysql -uroot -p123456
+mysql> show master status; //确定54主服务器配置好
++-----------------+----------+--------------+------------------+-------------------+
+| File            | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++-----------------+----------+--------------+------------------+-------------------+
+| master54.000001 |      154 |              |                  |                   |
++-----------------+----------+--------------+------------------+-------------
+mysql> grant replication slave on *.* to repluser@"%" identified by "123qqq...A";    //进用户授权
+d)把54从服务器配置上指定53主服务器信息
+mysql> change master to
+    -> master_host="192.168.4.53",　　主库ｉｐ地址
+    -> master_user="repluser" ,　　　　　主库授权用户
+    -> master_password="123qqq...A",　　　授权用户密码
+    -> master_log_file="master53.000001",　　　主库日志文件
+    -> master_log_pos=441;　　备份起始的日志偏移量（如果主从不一致，
+Query OK, 0 rows affected, 2 warnings (0.26 sec)
+
+mysql> start slave;　　　　　启动slave进程（从服务会生成，ＩＯ线程，ｓｑｌ线程）
+Query OK, 0 rows affected (0.01 sec)
+（如果有问题，排除，必须暂停　ｓｔｏｐ　ｓｌａｖｅ　然后再去查看上面命令）
+mysql> show slave status \G; //查看54从服务是否配置好
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for master to send event
+                  Master_Host: 192.168.4.53
+                  Master_User: repluser
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: master53.000001
+          Read_Master_Log_Pos: 441
+               Relay_Log_File: host54-relay-bin.000002
+                Relay_Log_Pos: 319
+        Relay_Master_Log_File: master53.000001
+             Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes
+
+-----------------------------------------------------------------------------------------------------------------------
+f)配置55服务器为 54数据库服务器的从服务器.
+[root@host55 ~]# vim /etc/my.cnf
+server_id=55
+wq
+
+]# systemctl restart mysqld
+
+[root@host55 ~]# systemctl restart mysqld
+[root@host55 ~]# mysql -uroot -p123456
+
+
+mysql> show slave status;
+Empty set (0.00 sec)
+
+mysql> change master to
+    -> master_host="192.168.4.54",
+    -> master_user="repluser",
+    -> master_password="123qqq...A",
+    -> master_log_file="master54.000001",
+    -> master_log_pos=441;
+Query OK, 0 rows affected, 2 warnings (0.21 sec)
+mysql> start slave;　
+mysql> show slave status \G;
+*************************** 1. row ***************************
+               Slave_IO_State: Waiting for master to send event
+                  Master_Host: 192.168.4.54
+                  Master_User: repluser
+                  Master_Port: 3306
+                Connect_Retry: 60
+              Master_Log_File: master54.000001
+          Read_Master_Log_Pos: 441
+               Relay_Log_File: host55-relay-bin.000002
+                Relay_Log_Pos: 319
+        Relay_Master_Log_File: master54.000001
+             Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes
+
+---------------------------------------------------------------------------------------------------------------------
+G)测试:
+  1)在53主服务器上进行授权,客户端进行访问.
+mysql> grant all on gamedb.* to admin2@"%" identified by "123qqq...A";
+
+------------------------------------------------------------------------------------------------------------
+
+  2)客户端进行验证;
+
+[root@host50 ~]# mysql -h192.168.4.53 -uadmin2 -p123qqq...A
+mysql> create database gamedb;
+Query OK, 1 row affected (0.03 sec)
+
+mysql> create table gamedb.user(name char(18));
+Query OK, 0 rows affected (0.30 sec)
+
+mysql> insert into gamedb.user values("tom");
+Query OK, 1 row affected (0.06 sec)
+
+mysql> insert into gamedb.user values("jim");
+Query OK, 1 row affected (0.04 sec)
+
+   3)到55服务器上查看;
+     测试一
+mysql> select host ,user from mysql.user;  //能够看到同步53给admin2的授权
++-----------+-----------+
+| host      | user      |
++-----------+-----------+
+| %         | admin2    |
+| localhost | mysql.sys |
+| localhost | root      |
+
+测试二  //在53数据库服务器上写入的数据,同步到55服务器.
+mysql> select * from gamedb.user;
++------+
+| name |
++------+
+| tom  |
+| jim  |
++------+
+2 rows in set (0.00 sec
+
+======================================================
+
+案例四 配置 主主结构 ,互为主从. 把数据库服务器 56 和 57 搭建
+======================================================
+
+在 56 的服务器上配置:
+[root@host56 ~]# vim /etc/my.cnf
+
+
+[mysqld]
+log_bin=master56
+server_id=56
+log_slave_updates      //允许级联复制
+[root@host56 ~]# systemctl restart mysqld
+[root@host56 ~]# mysql -uroot -p123qqq...A
+
+mysql> grant replication slave on *.* to repluser@"%" identified by "123qqq...A";
+Query OK, 0 rows affected, 1 warning (0.02 sec)
+
+mysql> change master to
+    -> master_host="192.168.4.57",
+    -> master_user="repluser",
+    -> master_password="123qqq...A",
+    -> master_log_file="master57.000001",
+    -> master_log_pos=441;
+
+
+在57的服务器上配置
+
+[root@host57 ~]# vim /etc/my.cnf
+[mysqld]
+log_bin=master57
+server_id=57
+log_slave_updates          //允许级联复制
+[root@host56 ~]# systemctl restart mysqld
+[root@host56 ~]# mysql -uroot -p123qqq...A
+
+mysql> grant replication slave on *.* to repluser@"%" identified by "123qqq...A";
+Query OK, 0 rows affected, 1 warning (0.02 sec)
+
+mysql> change master to
+    -> master_host="192.168.4.56",
+    -> master_user="repluser",
+    -> master_password="123qqq...A",
+    -> master_log_file="master56.000001",
+    -> master_log_pos=441;
+===================================================
+
+案例五
+
+配置半同步复制 53主---54(主,从)--55(从)
+开启53主模式
+开启54主从模式
+开启55从模式  
+==================================================
+53服务器上配置 主服务  开启半同步模式
+
+模式配置:
+   ..查看是否运行动态加载模块:默认是运行
+mysql> show variables like 'have_dynamic_loading';
++----------------------+-------+
+| Variable_name        | Value |
++----------------------+-------+
+| have_dynamic_loading | YES   |
++----------------------+-------+
+1 row in set (0.00 sec)
+
+
+[root@host53 ~]# vim /etc/my.cnf
+
+[mysqld]
+
+plugin-load=rpl_semi_sync_master=semisync_master.so
+rpl_semi_sync_master_enabled=1
+[root@host53 ~]# systemctl restart mysqld
+[root@host53 ~]# mysql -uroot -p123456
+mysql> show variables like "rpl_semi_sync_%_enabled";
++------------------------------+-------+
+| Variable_name                | Value |
++------------------------------+-------+
+| rpl_semi_sync_master_enabled | ON    |
++------------------------------+-------+
+
+
+==================================================
+54服务器主从服务器设置
+[root@host54 ~]# vim /etc/my.cnf
+[mysqld]
+plugin-load="rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so"
+rpl_semi_sync_master_enabled=1       //加载主,和从,半同步复制模块.
+rpl_semi_sync_slave_enabled=1        //开启主,和从,半同步复制模块
+#wq
+[root@host54 ~]# systemctl restart mysqld
+[root@host54 ~]# mysql -uroot -p123456
+
+mysql> show variables like "rpl_semi_sync_%_enabled";//查看半同步服务是否开启
++------------------------------+-------+
+| Variable_name                | Value |
++------------------------------+-------+
+| rpl_semi_sync_master_enabled | ON    |
+| rpl_semi_sync_slave_enabled  | ON    |
++------------------------------+-------+
+
+===================================================
+55服务器从服务器 ,半同步模式设置加载,开启
+[root@host55 ~]# vim /etc/my.cnf
+[mysqld]
+validate_password_policy=0
+validate_password_length=6
+server_id=55
+plugin-load=rpl_semi_sync_slave=semisync_slave.so
+rpl_semi_sync_slave_enabled=1
+
+[root@host55 ~]# systemctl restart mysqld
+[root@host55 ~]# mysql -uroot -p123456
+
+mysql> show variables like "rpl_semi_mysql> show variables like "rpl_semi_sync_%_enabled";
++------------------------------+-------+
+| Variable_name                | Value |
++------------------------------+-------+
+| rpl_semi_sync_master_enabled | ON    |
+| rpl_semi_sync_slave_enabled  | ON    |
++------------------------------+-------+
+sync_%_enabled";
++-----------------------------+-------+
+| Variable_name               | Value |
++-----------------------------+-------+
+| rpl_semi_sync_slave_enabled | ON    |
++-----------------------------+-------+
+
+
+==================================================
+半同步复制模式 :命令行,临时设置
+命令行加载插件
+  --使用数据库管理员root用户访问服务
+mysql > install plugin rpl_semi_sync_master
+     -> SONAME   "semisync_master" ; //主服务器上安装 :主半同步复制模块
+mysql > install plugin rpl_semi_sync_slave                       
+     -> SONAME "semisync_slave.so" ;  //从服务器上安装:从半同步复制模块
+
+mysql> select plugin_name,plugin_status from information_schema.plugins where plugin_name like '%semi%';  //查看两个模块已经安装.
++----------------------+---------------+
+| plugin_name          | plugin_status |
++----------------------+---------------+
+| rpl_semi_sync_master | ACTIVE        |
+| rpl_semi_sync_slave  | ACTIVE        |
++----------------------+---------------+
+  --启动半同步复制
+ --半同步复制,默认是关闭的.
+mysql> set global rpl_semi_sync_master_enabled=1;//启动主半同步复制模块
+mysql> set global rpl_semi_sync_slave_enabled=1;//启动主半同步复制模块
+
+mysql> show variables like "rpl_semi_sync_%_enabled";//查看启动主从两个半同步复制功能
++------------------------------+-------+
+| Variable_name                | Value |
++------------------------------+-------+
+| rpl_semi_sync_master_enabled | ON    |
+| rpl_semi_sync_slave_enabled  | ON    |
++------------------------------+-------+
+====================================================
+数据库默认information_schema.plugins 表中存放,数据库已经加载模块,以及相应的状态.
+
+mysql> select plugin_name,plugin_status from information_schema.plugins ;
++----------------------------+---------------+
+| plugin_name                | plugin_status |
++----------------------------+---------------+
+| binlog                     | ACTIVE        |
+| mysql_native_password      | ACTIVE        |
+| sha256_password            | ACTIVE        |
+| CSV                        | ACTIVE        |
+| MEMORY                     | ACTIVE        |
+| InnoDB                     | ACTIVE        |
+| INNODB_TRX                 | ACTIVE        |
+
+=====================================================
+重点理解-----MySQL配置选项：
+--logs-slave-updates
+
+通常情况，从服务器从主服务器接收到的更新不记入它的二进制日志。该选项告诉从服务器将其SQL线程执行的更新记入到从服务器自己的二进制日志。为了使该选项生效，还必须用--logs-bin选项启动从服务器以启用二进制日志。如果想要应用链式复制服务器，应使用--logs-slave-updates。
+
+例如，可能你想要这样设置：   A -> B -> C   也就是说，A为从服务器B的主服务器，B为从服务器C的主服务器。为了能工作，B必须既为主服务器又为从服务器。你必须用--logs-bin启动A和B以启用二进制日志，并且用--logs-slave-updates选项启动B。
+
+当然在这种机制下可能有存在这么个问题： 如果a->b b->a 这样的双master架构下，a,b都打开log_slave_updates选项会不会出现无限循环的状态。 mysql已经考滤到了这个问题，每条bin-log都会记录执行语句的源server_id.当slave读到语句的server_id等于本身的ID的时候，会忽略执行，所以我们不用担心a,b会不会无限循环下去。
+
+
+
+54级联复制服务器] # vim /etc/my.cnf
+[mysqld]
+log_bin=master54    //配置主服务器
+server_id=54
+log_slave_updates  //允许级联复制
+从服务器上一定要开启二进制日志和log_slave_updates参数。因为若是不设置log_slave_updates，从服务器只是开启了二进制日志，但是却没有向二进制日志里面写入数据。
+

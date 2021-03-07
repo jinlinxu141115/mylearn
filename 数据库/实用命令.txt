@@ -1,0 +1,6 @@
+2019.11.14
+
+1.ps -C mysqld         //查看进程号
+  PID TTY          TIME CMD
+ 1699 pts/0    00:00:00 mysqld
+2.kill -9 1699       //杀掉相应进程

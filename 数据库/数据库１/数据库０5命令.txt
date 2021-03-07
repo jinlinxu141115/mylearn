@@ -1,0 +1,327 @@
+2019.11.11　数据库　第五天　命令
+
+一  常用的mysql备份工具
+       ..物理备份缺点:
+        --跨平台性差
+        --备份时间长,冗余备份,浪费存储空间
+ mysqldump备份缺点:
+         --效率较低,备份和还原的速度慢,锁表
+          --备份过程中,数据插入和更新操作被阻塞.0
+二.  XtraBackup工具?
+    --一款强大的在线热备份工具.
+    ---由专业阻止Perconna提供(改进mysql分支)
+   ..主要由两个组件
+   --xtrabackup : C语言,支持InnoDB/XraDB  
+   --innobackupex : 以Perl脚本封装xtrabackup,支持MyISAM
+
+innobackupex 也是物理备份
+
+三.安装perconna的软件包
+[root@host50 ~]# rpm -ivh libev-4.15-1.el6.rf.x86_64.rpm
+[root@host50 ~]# yum -y install percona-xtrabackup-24-2.4.7-1.el7.x86_64.rpm 
+[root@host50 ~]# man innobackupex            //查看命令说明
+[root@host50 ~]# innobackupex --help
+
+innobackupex命令
+
+常用的选项:
+      --host  　　主机名
+      --user  　 用户名
+      --port 　　 端口号
+      --password   密码
+      --databases     (数据库名)(--databases="库名" 一个库)(--databases="库1    库2 "  (--databases="库1.表")
+      --no-timestamp  不要用日期命名备份文件存储的子目录名.
+      --redo-only      日志合并
+      --apply-back     准备恢复数
+      --copy-back  拷贝数据
+      --incremental 目录名   增量备份
+      --incremental-basedir=目录名  增量备份时,指定上一次备份数据存储的目录名
+      --export     导出表信息
+        import     导入表空间
+               
+3.1完全备份和恢复完全备份
+
+A. 完全备份命令格式: ]# innobackupex --user 用户名 
+   --password 密码  备份目录文件            //可以自由创建
+   --no-timestamp (不按照默认的目录时间形式存数据,自己创建目录进行备份).
+
+B .完全恢复命令格式: ]# innobackupex  --apply-log  目录名 //准备恢复数据
+                 ]# innobackupex  --copy-back  目录名//恢复数据(能够把备份数据同步到/var/lib/mysql/下面.操作系统root权限进程操作.
+
+
+3.2增量备份和增量恢复
+
+Ａ．增量备份
+ innobackupex   --user  用户名  --password  密码  
+--incremental 增量目录         //新增量数据存放的位置 /newdir1  
+--incremental-basedir=目录名    //上次备份的文件位置  例如完全备份的/allbak
+--no-timestamp
+
+B.增量恢复
+[root@host52 opt]# innobackupex  --apply-log --redo-only /opt/allbak01
+[root@host52 opt]# innobackupex  --apply-log --redo-only /opt/allbak01 --incremental-dir=/opt/newdir2 
+[root@host52 opt]# innobackupex  --copy-back  /opt/allbak01/
+完全备份案例一:
+
+.把50服务器上ｍｙｓｑｌ数据完全备份,然后在51数据库,把库情况,用完全恢复,把51里的数据和50数据保持一致.
+
+====================================================
+#在50服务器上创建新表,新库
+mysql> create table a (name char(10))engine=innodb;
+mysql> create table b (name char(10))engine=innodb;创建表引擎必须是innodb,innobackupex才能实现增量备份,不然都只能够进行完全备份.
+
+[root@host50 ~]# [root@host50 ~]# innobackupex  --user root --password 123456  /allbak --no-timestamp 
+[root@host50 ~]# scp -r /allbak    root@192.168.4.51:/root/  #把完全备份文件传给51服务器.
+
+查看 完全恢复前 xtrabackup_checkpoints 的状态.
+[root@host51 allbak]# cat /root/allbak/xtrabackup_checkpoints 
+backup_type = full-backuped     是完全备份.
+from_lsn = 0              完全备份日志号开始
+to_lsn = 3149201          完全备份日志号结束
+last_lsn = 3149210        如果再产生新的增量会从 这开始
+compact = 0
+recover_binlog_info = 0
+
+在51服务器上把mysqld停止.
+[root@host51 ~]# systemctl stop mysqld
+[root@host51 allbak]# rm -rf /var/lib/mysql/*  //把51上mysql数据库清空
+[root@host51 allbak]# ls /var/lib/mysql/
+
+[root@host51 ~]# innobackupex  --apply-log /root/allbak //准备恢复数据库
+[root@host51 ~]# cat /root/allbak/xtrabackup_checkpoints 
+backup_type = full-prepared   //提示目前xtrabacup_checkppints 在准备状态
+from_lsn = 0
+to_lsn = 3149201
+last_lsn = 3149210
+compact = 0
+recover_binlog_info = 0 
+[root@host51 ~]# innobackupex --copy-back /root/allbak //恢复数据
+[root@host51 ~]# ls /var/lib/mysql/    //把50上的完全备份文件拷贝到51mysql/下
+db5             ib_logfile0  mysql               xtrabackup_binlog_pos_innodb
+ib_buffer_pool  ib_logfile1  performance_schema  xtrabackup_info
+ibdata1         ibtmp1       sys
+
+[root@host51 ~]# chown -R mysql:mysql /var/lib/mysql //改变所有组和所有者为mysql
+[root@host51 ~]# mysql -uroot -p123456  进入数据库51查看是否备份.
+mysql> show databases;   //验证成功
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| db5                |
+| mysql              |
+| performance_schema |
+| sys                |
++--------------------+
+
+(数据库文件.在哪里存放日志的号./var/lib/mysql/下面有两个事务日志文件, lb_logfile0 和 lb_logfile2,引擎innodb表写命令时候,会写在 两个日志文件里写入lsn号,.多个记录区分是通过lsn日志系列号来区分),日志序列号和备份里的 last_lsn 不同的话,产生新的增量数据.
+ 
+=======================================================
+
+完全备份还原一张表
+库和表是以文件形式存放在数据库里
+表空间:用来存放表记录的文件  表名.ibd
+
+innodb的引擎会有两个文件  
+
+a) .frm文件   存放表结构 (日志信息) 
+b) .ibd文件    表索引,表记录存放在ibd文件里别名也叫表空间.
+
+执行完导出表信息
+[root@host50 allbak]# innobackupex --apply-log --export /allbak
+会产生每个表日志备份文件信息:  
+.cfg  .exp 表结构 和表信息 两个文件.
+
+日志信息,数据(学生)  案例恢复50数据库 db5.b表, 利用到上节课,完全备份的/allbak数据
+mysql> delete from db5.b;  完全备份恢复
+=========================================
+ 1)删除表空间
+ amysql> alter table db5.b discard tablespace;
+Query OK, 0 rows affected (0.12 sec)
+//删除 b.bd文件
+ 2)导出表信息
+[root@host50 allbak]# innobackupex --apply-log --export /allbak
+ [root@host50 db5]# ls   //产生表信息文件 .cfg  .exp
+a.frm  a.ibd  b.cfg  b.exp  b.frm  b.ibd  db.opt
+3)拷贝表信息文件到数据库目录下:
+[root@host50 db5]# cp b.{cfg,exp,ibd}  /var/lib/mysql/db5/
+4)修改表信息文件的所有者和组用为mysql
+[root@host50 db5]# chown mysql:mysql /var/lib/mysql/db5/b.*
+5)导入表空间
+[root@host50 db5]# mysql -uroot -p123456
+
+mysql> alter table db5.b import tablespace;
+6)删除数据库目录加的表信息文件
+[root@host50 db5]# rm -rf b.cfg
+[root@host50 db5]# rm -rf b.exp
+
+7)查看表记录
+mysql> select * from db5.b;
++------+
+| name |
++------+
+| lala |
+| lala |
+
+数据库配置文件    db.opt
+       
+3.2 增量备份.
+
+命令格式:
+
+ ..增量备份 
+
+备份:  50服务器
+恢复:  51服务器
+
+]# innobackupex   --user  用户名  --password  密码  
+--incremental 增量目录         //新增量数据存放的位置 /newdir1  
+--incremental-basedir=目录名    //上次备份的文件位置  例如完全备份的/allbak
+--no-timestamp
+(数据库文件.在哪里存放日志的号./var/lib/mysql/下面有两个事务日志文件, lb_logfile0 和 lb_logfile2,引擎innodb表写命令时候,会写在 两个日志文件里写入lsn号,.多个记录区分是通过lsn日志系列号来区分),日志序列号和备份里的 last_lsn 不同的话,产生新的增量数据.
+
+[root@host50 ~]# innobackupex  --user root --password 123456 
+--incremental /newdir1        //指定新数据增量备份位置/newdir1 
+--incremental-basedir=/allbak01   //上次备份的/allbak01
+--no-timestamp 
+完全备份信息:/allbak01
+[root@host50 db5]# cat /allbak01/xtrabackup_checkpoints 
+backup_type = full-backuped
+from_lsn = 0
+to_lsn = 3154810
+last_lsn = 3154819
+compact = 0
+recover_binlog_info = 0
+插入新数据
+
+第一次增量备份信息 :
+[root@host50 newdir1]# cat /newdir1/xtrabackup_checkpoints 
+backup_type = incremental
+from_lsn = 3154810
+to_lsn = 3168622
+last_lsn = 3168631
+compact = 0
+recover_binlog_info = 0
+==================
+第二次增量备份信息
+[root@host50 newdir1]# cat /newdir2/xtrabackup_checkpoints 
+backup_type = incremental
+from_lsn = 3168622
+to_lsn = 3178638
+last_lsn = 3178647
+compact = 0
+recover_binlog_info = 0
+
+
+工作中显示
+周一做完全备份 /allbak01
+周二做增量备份/newdir1
+周三做增量备份/newdir2
+innobackupex  --user root --password 123456 
+--incremental /newdir2       //指定新数据增量备份位置/newdir2 
+--incremental-basedir=/newdir1   //上次备份的/newdir1 
+--no-timestamp 
+
+
+..增量恢复
+--apply-log  --redo-only  目录名
+--incremental-dir=目录名  //准备恢复数据
+
+
+]#innobackupex --copy-back  目录名 //恢复数据
+
+
+1) 把三个备份文件拷贝给52服务器上:
+[root@host50 newdir1]# scp -r /allbak01 root@192.168.4.52:/opt/
+[root@host50 newdir1]# scp -r /newdir1 root@192.168.4.52:/opt/
+[root@host50 newdir1]# scp -r /newdir1 root@192.168.4.52:/opt/
+
+2) 52服务器把mysql服务停止,并安装percona软件.
+[root@host52 ~]# systemctl stop mysqld
+[root@host52 ~]# rpm -ivh libev-4.15-1.el6.rf.x86_64.rpm
+[root@host52 ~]# yum -y install percona-xtrabackup-24-2.4.7-1.el7.x86_64.rpm
+
+3)把原来mysql/的文件删除, 并把增量备份进行合并,追加.
+
+[root@host52 ~]# rm -rf /var/lib/mysql/*
+[root@host52 opt]# innobackupex  --apply-log --redo-only /opt/allbak01
+[root@host52 opt]# cat /opt/allbak01/xtrabackup_checkpoints 
+backup_type = log-applied     //日志为追加状态.
+from_lsn = 0
+to_lsn = 3154810
+last_lsn = 3154819
+compact = 0
+recover_binlog_info = 0
+
+[root@host52 opt]# innobackupex  --apply-log --redo-only /opt/allbak01 --incremental-dir=/opt/newdir1    //把newdir1追加到 全备份的allbak01里面.
+
+[root@host52 opt]# cat /opt/allbak01/xtrabackup_checkpoints backup_type = log-applied
+from_lsn = 0                    //查看全备份的状态 结束位置为newdir1 的最后
+to_lsn = 3168622
+last_lsn = 3168631
+compact = 0
+recover_binlog_info = 0
+
+
+[root@host52 opt]# innobackupex  --apply-log --redo-only /opt/allbak01 --incremental-dir=/opt/newdir2     //把newdir再追加到完备份allbak01里面
+[root@host52 opt]# cat /opt/allbak01/xtrabackup_checkpoints backup_type = log-applied
+from_lsn = 0
+to_lsn = 3178638                   //查看全备份的状态 结束位置为newdir2 的最后
+last_lsn = 3178647
+compact = 0
+recover_binlog_info = 0
+
+
+4)把备份准备的文件,拷贝到 52服务器上/var/lib/mysql/ ,并修改相应所有组和所有者
+
+[root@host52 opt]# innobackupex --copy-back /opt/allbak01/   //把备份数据拷贝到 /var/lib/mysql/
+
+[root@host52 opt]# chown -R mysql:mysql /var/lib/mysql  //修改所有组和所有者
+[root@host52 opt]# ls /var/lib/mysql
+db5             ibdata1  performance_schema  xtrabackup_binlog_pos_innodb
+ib_buffer_pool  mysql    sys                 xtrabackup_info
+
+5)重启服务,进入mysql 进行验证.
+
+[root@host52 opt]# systemctl start mysqld
+[root@host52 opt]# mysql -uroot -p123456
+mysql> select * from db5.a;
++------+
+| id   |
++------+
+|    1 |
+|    1 |
+|    1 |
+
+=============================
+
+
+差异备份与恢复
+周一 完全备份
+]# innobackupex --user root  --password  /allbak  --no-timestamp
+插入新记录
+
+周二 差异备份
+]# innobackupex --user root  --password  --incremental  /dir1   --incremental-basedir=/allbak
+插入新记录
+
+周三 差异备份
+
+]# innobackupex --user root  --password  --incremental  /dir2  --incremental-basedir=/allbak
+插入新记录
+
+周四 差异备份
+]# innobackupex --user root  --password  --incremental  /dir3 --incremental-basedir=/allbak
+
+++++RDBMS1 （数据库基础） 总结
+一 搭建mysql数据库服务器 
+二 数据管理（insert  delete update  select）
+三 用户授权与撤销权限和删除用户
+四 数据备份与恢复
+	备份策略 完全备份 增量备份  差异备份
+        命令     mysqldump  cp tar  innobackupex  binlog日志
+
+
+周1 完全备份  
+  
+

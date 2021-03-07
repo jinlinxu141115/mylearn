@@ -1,0 +1,533 @@
+2019.11.28　监控与服务安全　第二天　
+
+一.加密与解密
+
+    ..信息传递中的风险
+ 
+     --非技术 : 流程失控,开发人员,高管习惯,商业间谍,出差人员,合作伙伴
+     --技术   : 电脑黑客
+
+     ..什么是加/解密
+     --发送方:明文  -->   密文
+    Tarena  --> 加密  --> 25 31 24 26
+
+     --接收方:密文  -->   明文
+     25 31 24 26   --> 解密 --> Tarena
+
+     ..加密目的及方式
+  
+    .确保数据的机密性
+   --对称加密: 加密/解密用同一个秘钥
+   --非对称加密: 加密/解密用不同的秘钥 (公钥,私钥)
+
+
+     .保护信息完整性
+     --信息摘要: 基于输入的信息生成长度较短,位数固定的散列值
+
+      gpg命令 的 软解包gnupg2.x86_64
+
+       ..常见的加密算法
+   
+       --对称加密
+      DES , Data Encryption  Standard
+      AES , Advanced Encryption Standard
+        --非对称加密
+         RSA ,Rivest Shamirh  Adleman
+         DSA ,Digital Signature Algorithm
+      .Hash 散列技术,用于信息摘要
+          MD5,Message Digest Algorithm 5
+          SHA,Secure Hash Algorithm            
+             根据输入的文本(长度不限),生成固定长度(比如128位)的摘要文本
+             只要输入的文本不同,则生成的摘要文本也不一样
+  
+
+1.1.GPG对称加/解密
+
+.基本用法
+  --加密操作:  --symmetric  或者 -c
+ --解密操作: --decrypt   或者 -d 
+[usera@room9pc01 ~]$ gpg -c xu.txt
+[userb@room9pc01 ~]$ gpg -d  /tmp/xu.txt.gpg
+===================================================
+实验环境:
+
+          真机上操作,root密码:Taren1.bgsn,添加两个用户usera,userb
+          分别开两个终端 . ssh -X usera@localhost  或者ss -X userb@真机IP
+
+------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------
+实验一: GPG对称加/解密
+用户usera ,创建xu.txt文件进行加密 ,把加密文件放在共享的文件夹 /tmp/下
+用户userb ,对加密的文件通过对称设置共享密码1234567890 ,进行读写.
+--------------------------------------------------------------------------------------------------------------------------------
+[usera@room9pc01 ~]$ vim xu.txt
+[usera@room9pc01 ~]$ ls
+xu.txt
+[usera@room9pc01 ~]$ cat xu.txt 
+iijjjjjeljfel
+[usera@room9pc01 ~]$ gpg -c xu.txt 
+
+....   //设置输入密码
+
+gpg: 已创建目录‘/home/usera/.gnupg’
+gpg: 新的配置文件‘/home/usera/.gnupg/gpg.conf’已建立
+gpg: 警告：在‘/home/usera/.gnupg/gpg.conf’里的选项于此次运行期间未被使用
+gpg: 钥匙环‘/home/usera/.gnupg/pubring.gpg’已建立
+[usera@room9pc01 ~]$ ls
+xu.txt  xu.txt.gpg
+[usera@room9pc01 ~]$ cp xu.txt xu.txt.gpg  /tmp/
+
+
+解密::
+
+[userb@room9pc01 ~]$ gpg -d  /tmp/xu.txt.gpg 
+gpg: 已创建目录‘/home/userb/.gnupg’
+gpg: 新的配置文件‘/home/userb/.gnupg/gpg.conf’已建立
+gpg: 警告：在‘/home/userb/.gnupg/gpg.conf’里的选项于此次运行期间未被使用
+gpg: 钥匙环‘/home/userb/.gnupg/secring.gpg’已建立
+gpg: 钥匙环‘/home/userb/.gnupg/pubring.gpg’已建立
+gpg: CAST5 加密过的数据
+gpg: 以 1 个密码加密
+iijjjjjeljfel
+gpg: 警告：报文未受到完整的保
+
+------------------------------------------------------------------------------------------------------------------------------------
+ B..把解密输出在屏幕上的.追加给指定文件
+--------------------------------------------------------------------------------------------------------------------------------------
+[userb@room9pc01 ~]$ gpg -d  /tmp/xu.txt.gpg  >> ~/test.txt  把查看文件放入文件
+gpg: CAST5 加密过的数据
+gpg: 以 1 个密码加密
+gpg: 警告：报文未受到完整的保护
+
+
+
+1.2 gpg非对称加/解密
+
+.基本过程   (公钥 ,加密 ) (私钥,解密)   用户A 传信息给  用户B
+  
+   -- 01 : 用户B把自的公钥传给用户A
+   --02 : 用户A使用B的公钥加密数据,将加密后的数据给用户B
+    --03 用户B使用自己的私钥解密数据
+
+.前期准备工作 
+    --UserB  创建秘钥对:  --gen-key
+    --UserB  导出公钥:    --export \  --armor或者-a
+     --UserA  导入公钥:   --import
+[userb@room9pc01 ~]$ gpg --gen-key
+[userb@room9pc01 .gnupg]$ gpg -a --export > /tmp/userb.pub  把B公钥导出
+
+[usera@room9pc01 ~]$ gpg --import  /tmp/userb.pub
+
+.基本用法
+   --加密操作: --encrypt 或者 -e
+  --指定目标用户: --recipient 或者 -r
+  -- 解密操作:     --decrypt 或者 -d
+
+
+-------------------------------------------------------------------------------------------------------------
+案例2.非对称加/解密
+
+真机环境,利用usera 传数据给 userb
+useb创建公私钥, 把公钥创给 用户a .用户a把公钥进行导入,把文件夹进行加密
+------------------------------------------------------------------------------------------------------------------
+
+
+===1  用户B 生成秘钥对
+
+[userb@room9pc01 ~]$ gpg --gen-key
+gpg (GnuPG) 2.0.22; Copyright (C) 2013 Free Software Foundation, Inc.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+gpg: 已创建目录‘/home/userb/.gnupg’
+gpg: 新的配置文件‘/home/userb/.gnupg/gpg.conf’已建立
+gpg: 警告：在‘/home/userb/.gnupg/gpg.conf’里的选项于此次运行期间未被使用
+gpg: 钥匙环‘/home/userb/.gnupg/secring.gpg’已建立
+gpg: 钥匙环‘/home/userb/.gnupg/pubring.gpg’已建立
+请选择您要使用的密钥种类：
+   (1) RSA and RSA (default)
+   (2) DSA and Elgamal
+   (3) DSA (仅用于签名)
+   (4) RSA (仅用于签名)
+您的选择？   //选择密钥类型,默认回车
+RSA 密钥长度应在 1024 位与 4096 位之间。
+您想要用多大的密钥尺寸？(2048) 
+您所要求的密钥尺寸是 2048 位
+请设定这把密钥的有效期限。
+         0 = 密钥永不过期
+      <n>  = 密钥在 n 天后过期
+      <n>w = 密钥在 n 周后过期
+      <n>m = 密钥在 n 月后过期
+      <n>y = 密钥在 n 年后过期
+密钥的有效期限是？(0) 
+密钥永远不会过期
+以上正确吗？(y/n)y
+
+You need a user ID to identify your key; the software constructs the user ID
+from the Real Name, Comment and Email Address in this form:
+    "Heinrich Heine (Der Dichter) <heinrichh@duesseldorf.de>"
+
+真实姓名：userb
+电子邮件地址：user@164.com
+注释：student
+您选定了这个用户标识：
+    “userb (student) <user@164.com>”
+
+更改姓名(N)、注释(C)、电子邮件地址(E)或确定(O)/退出(Q)？0
+更改姓名(N)、注释(C)、电子邮件地址(E)或确定(O)/退出(Q)？O
+您需要一个密码来保护您的私钥。
+[userb@room9pc01 ~]$ ls -a ~
+.   .bash_logout   .bashrc  .config  .gnupg    test.txt  .Xauthority
+..  .bash_profile  .cache   .dbus    .mozilla  .viminfo
+
+[userb@room9pc01 ~]$ cd ~/.gnupg/
+[userb@room9pc01 .gnupg]$ ls
+gpg.conf           pubring.gpg(公钥)   random_seed  S.gpg-agent
+private-keys-v1.d  pubring.gpg~  secring.gpg(私钥)  trustdb.gpg
+
+[userb@room9pc01 .gnupg]$ gpg --list-keys
+/home/userb/.gnupg/pubring.gpg
+------------------------------
+pub   2048R/9D681707 2019-11-28
+uid                  userb (student) <user@164.com>
+sub   2048R/9B765AD1 2019-11-28
+
+
+=== 用户B导出公钥 
+
+[userb@room9pc01 .gnupg]$ gpg -a --export > /tmp/userb.pub  把B公钥导出
+
+
+
+=== 用户A 导入公钥.
+[usera@room9pc01 ~]$ rm -rf ~/.gnupg/ /删除原来记录和信息
+
+
+[usera@room9pc01 ~]$ gpg --import  /tmp/userb.pub 
+gpg: 已创建目录‘/home/usera/.gnupg’
+gpg: 新的配置文件‘/home/usera/.gnupg/gpg.conf’已建立
+gpg: 警告：在‘/home/usera/.gnupg/gpg.conf’里的选项于此次运行期间未被使用
+gpg: 钥匙环‘/home/usera/.gnupg/secring.gpg’已建立
+gpg: 钥匙环‘/home/usera/.gnupg/pubring.gpg’已建立
+gpg: /home/usera/.gnupg/trustdb.gpg：建立了信任度数据库
+gpg: 密钥 9D681707：公钥“userb (student) <user@164.com>”已导入
+gpg: 合计被处理的数量：1
+gpg:           已导入：1  (RSA: 1)
+[usera@room9pc01 ~]$ ls -a ~
+.              .bash_logout   .cache   .gnupg    .Xauthority
+..             .bash_profile  .config  .mozilla  xu.txt
+.bash_history  .bashrc        .dbus    .viminfo  xu.txt.gpg
+[usera@room9pc01 ~]$ cd .gnupg/
+[usera@room9pc01 .gnupg]$ ls
+gpg.conf  pubring.gpg  pubring.gpg~  secring.gpg  trustdb.gpg
+ 
+
+
+
+=== 用户A 使用公钥.加密文件
+[usera@room9pc01 ~]$ vim xu01.txt
+[usera@room9pc01 ~]$ cat xu01.txt
+
+irjoewrjw23
+[usera@room9pc01 ~]$ gpg -e -r userb xu01.txt 
+gpg: 9B765AD1：没有证据表明这把密钥真的属于它所声称的持有者
+
+pub  2048R/9B765AD1 2019-11-28 userb (student) <user@164.com>
+ 主钥指纹： E0AD 0DB3 C119 E37B 3A45  A16E F926 532F 9D68 1707
+ 子钥指纹： C635 D3D9 086A 205E FF0D  BF83 23DD 970E 9B76 5AD1
+
+这把密钥并不一定属于用户标识声称的那个人。如果您真的知道自
+己在做什么，您可以在下一个问题回答 yes。
+
+无论如何还是使用这把密钥吗？(y/N)y
+[usera@room9pc01 ~]$ ls
+xu01.txt  xu01.txt.gpg  xu.txt  xu.txt.gpg
+[usera@room9pc01 ~]$ cp xu01.txt.gpg /tmp/
+
+
+=== 用户B  利用私钥进行 解密 读取xu01.txt
+
+[userb@room9pc01 .gnupg]$ gpg -d /tmp/xu01.txt.gpg  > ~/user01.txt
+
+您需要输入密码，才能解开这个用户的私钥：“userb (student) <user@164.com>”
+2048 位的 RSA 密钥，钥匙号 9B765AD1，建立于 2019-11-28 (主钥匙号 9D681707)
+
+gpg: 由 2048 位的 RSA 密钥加密，钥匙号为 9B765AD1、生成于 2019-11-28
+      “userb (student) <user@164.com>”   //跳出来,得输入 私钥密码
+[userb@room9pc01 .gnupg]$ ls ~/
+test.txt  user01.txt
+[userb@room9pc01 .gnupg]$ cat ~/user01.txt 
+
+irjoewrjw23
+
+
+1.3.  gpg数字签名..   确认数据的来源
+
+ ..软件签名与验证过程
+
+  --软件官方以私钥对软件包执行数字签名
+  --用户下载软件包,软件官方的公钥
+  --以官方公钥验证软件包签名,确保数据来源正确
+
+
+------------------------------------------------------------------------------------------------
+上午实验,用户usera已经做了秘钥对,以及把秘钥的公钥 发给了 用户usra
+
+
+-----用户B创建签名文件,(需要输入私钥的密码)
+
+[userb@room9pc01 ~]$ gpg -b test.txt 
+
+您需要输入密码，才能解开这个用户的私钥：“userb (student) <user@164.com>”
+2048 位的 RSA 密钥，钥匙号 9D681707，建立于 2019-11-28
+
+[userb@room9pc01 ~]$ ls
+test.txt  test.txt.sig  user01.txt
+[userb@room9pc01 ~]$ cp test.txt* /tmp/   把文件和签名文件创给用户a共享文件tmp
+
+
+====用户A验证签名
+
+[usera@room9pc01 ~]$ gpg --verify /tmp/test.txt.sig 
+gpg: 于 2019年11月28日 星期四 15时24分21秒 CST 创建的签名，使用 RSA，钥匙号 9D681707
+gpg: 完好的签名，来自于“userb (student) <user@164.com>”
+gpg: 警告：这把密钥未经受信任的签名认证！
+gpg:       没有证据表明这个签名属于它所声称的持有者。
+主钥指纹： E0AD 0DB3 C119 E37B 3A45  A16E F926 532F 9D68 1707
+
+===  --------
+利用root 进行修改文件 vim /tmp/test.txt   修改添加a
+aiijjjjjeljfel
+
+[usera@room9pc01 ~]$ gpg --verify /tmp/test.txt.sig 
+gpg: 于 2019年11月28日 星期四 15时24分21秒 CST 创建的签名，使用 RSA，钥匙号 9D681707
+gpg: 已损坏的签名，来自于“userb (student) <user@164.com>”
+
+
+
+
+==================
+利用root用户 把test.txt还原原来的 vim /tmp/test.txt
+iijjjjjeljfel
+
+[usera@room9pc01 ~]$ gpg --verify /tmp/test.txt.sig 
+gpg: 于 2019年11月28日 星期四 15时24分21秒 CST 创建的签名，使用 RSA，钥匙号 9D681707
+gpg: 完好的签名，来自于“userb (student) <user@164.com>”
+gpg: 警告：这把密钥未经受信任的签名认证！
+gpg:       没有证据表明这个签名属于它所声称的持有者。
+主钥指纹： E0AD 0DB3 C119 E37B 3A45  A16E F926 532F 9D68 1707
+
+
+
+
+
+二.AIDE入侵检查系统
+
+
+
+
+
+3 @@define DBDIR /var/lib/aide       //数据库目录
+4 @@define LOGDIR /var/log/aide                  //日志目录
+12 database_out=file:@@{DBDIR}/aide.db.new.gz  //没有入侵前文件初始信息存放路径
+
+database=file:@@{DBDIR}/aide.db.gz  //把原始的信息,拷贝回来的必须名字.新的数据会和他笔记
+
+[root@host50 ~]# sed -i '99,312s/^/#/' /etc/aide.conf  把99行后面 加#
+
+
+[root@host50 ~]# vim +99 /etc/aide.conf 
+/root/    FIPSR
+
+
+[root@host50 ~]# aide --init  //把/root/文件下 没入侵信息保存到/var/lib/aide/aide.db.new.gz
+
+AIDE, version 0.15.1
+
+### AIDE database at /var/lib/aide/aide.db.new.gz initialized.
+
+[root@host50 ~]# ls /var/lib/aide/   //把源信息,进行保存
+aide.db.new.gz
+[root@host50 ~]# mv /var/lib/aide/aide.db.new.gz   /opt/
+
+
+[root@host50 ~]# cp /opt/aide.db.new.gz  /var/lib/aide/aide.db.gz  //把之前备份的校验数据库文件还原,名字必须为aide.db.gz
+[root@host50 ~]# ls /var/lib/aide/
+aide.db.gz
+
+-------------------------------------------------------------------------------------
+[root@host50 ~]# ls
+a.txt  Desktop
+[root@host50 ~]# rm -rf Desktop/   删除桌面文件
+[root@host50 ~]# ls -a
+.      .bash_history  .bashrc  .cshrc    .ssh      .Xauthority
+..     .bash_logout   .cache   .local    .tcshrc
+a.txt  .bash_profile  .config  .mozilla  .viminfo
+-------------------------------------------------------------------------------------------------
+
+[root@host50 ~]# aide --check    //根据数据库执行入侵检查
+AIDE 0.15.1 found differences between database and filesystem!!
+Start timestamp: 2019-11-28 16:35:48
+
+Summary:
+  Total number of files:	110
+  Added files:			0
+  Removed files:		1
+  Changed files:		1
+
+
+---------------------------------------------------
+Removed files:
+---------------------------------------------------
+
+removed: /root/Desktop
+
+---------------------------------------------------
+Changed files:
+---------------------------------------------------
+
+changed: /root/.viminfo
+
+---------------------------------------------------
+Detailed information about changes:
+---------------------------------------------------
+
+
+File: /root/.viminfo
+ Size     : 5301                             , 5297
+ Mtime    : 2019-11-28 16:26:14              , 2019-11-28 16:32:35
+ Ctime    : 2019-11-28 16:26:14              , 2019-11-28 16:32:35
+ Inode    : 1059589                          , 1059557
+ SHA256   : gMwzjroyHF9qcFLBYEBACA06ewDWJqd/ , LookBLaQeMaTU6gOEL
+
+
+
+
+三. NMAP 扫描  与 抓包
+
+  3.1扫描nmap (查看客户端,那些服务启动)
+nmap 192.168.4.50   //不加选择默认是tcp扫描
+
+nmap -sU  192.168.4.50  //UDP扫描
+
+
+    
+-sT (全开)  tcp 三次握手成功 ,扫描才结束.
+ 
+-sS (半开)   第三次的应答没有
+
+nmap  -n -p 6354             //禁止dns反向解析
+nmap  -p 21-100 192.168.4.50   //扫描对应的 端口.     
+ 
+
+ 3.2抓包tcpdump
+
+. 命令行抓取数据包的工具
+.基本用法
+  --tcpdump [选项] [过滤条件]
+ .常见监控选项
+  -- -i 指定监控的网络接口
+  ---  -A 转换为ACSII码,以方便阅读
+   --    -W 将数据包信息保存到指定文件
+    ---   -r 从指定文件读取数据包信息
+     --- -C 定义抓包个数
+
+ .tcpdump 的过滤条件
+   --类型:  host,net(网段:192.168.4.0/24),port,portrange(端口范围)
+   --方向:  src(源地址IP), dst (查看,地址目标,像淘宝网站)
+   --协议:  tcp,udp,ip,wlan,arp
+   --多个条件组合: and (同时匹配) , or, not(取反)
+
+
+
+[root@room9pc01 ~]# tcpdump -i eth0 -c 2 -w ./pgk.cap   //读取包,写入pak文件
+tcpdump: listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+2 packets captured
+2 packets received by filter
+0 packets dropped by kernel
+
+
+
+[root@room9pc01 ~]# tcpdump -r ./pgk.cap    //读取IP包
+reading from file ./pgk.cap, link-type EN10MB (Ethernet)
+09:36:22.142877 IP room9pc01.tedu.cn.54384 > 176.19.200.7.rfb: Flags [.], ack 1413125690, win 1424, options [nop,nop,TS val 5588180 ecr 60860464], length 0
+09:36:22.170902 IP room9pc01.tedu.cn.58842 > tsa01s07-in-f14.1e100.net.https: Flags [S], seq 2384367618, win 29200, options [mss 1460,sackOK,TS val 5588208 ecr 0,nop,wscale 7], length 0
+
+
+
+
+[root@room9pc01 ~]# tcpdump -i eth0  icmp(过滤协议 ,ping)  
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+09:38:33.806302 IP 176.19.7.41 > room9pc01.tedu.cn: ICMP echo request, id 6606, seq 34, length 64
+09:38:33.806356 IP room9pc01.tedu.cn > 176.19.7.41: ICMP echo reply, id 6606, seq 34, length 64
+
+
+
+
+//查看本机的
+[root@room9pc01 ~]# tcpdump -i eth0 port 22 and host 176.19.7.41  //ping
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+09:46:47.371343 IP 176.19.7.41.49852 > room9pc01.tedu.cn.ssh: Flags [S], seq 1225211126, win 29200, options [mss 1460,sackOK,TS val 6529406 ecr 0,nop,wscale 7], length 0
+09:46:47.371368 IP room9pc01.tedu.cn.ssh > 176.19.7.41.49852: Flags [S.], seq 532062109, ack 1225211127, win 28960, options [mss 1460,sackOK,TS val 6213408 ecr 6529406,nop,wscale 7], length 0
+09:46:47.371480 IP 176.19.7.41.49852 > room9pc01.tedu.cn.ssh: Flags [.], ack 1, win 229, options [nop,nop,TS val 6529406 ecr 6213408], length 0
+
+
+
+
+[root@room9pc01 ~]# tcpdump -i eth0 icmp and \(host 176.19.7.41 or host 176.19.7.46 \)   //既有or  和 and 要提高优先也括号.已经
+
+
+[root@room9pc01 ~]# tcpdump -i eth0 src host 176.19.7.41  //查看源地址主机包
+
+
+
+
+------------------------------
+虚拟机 50 访问真机 ftp
+
+[root@host50 ~]# yum -y install ftp
+
+[root@host50 ~]# ftp 192.168.4.254
+Connected to 192.168.4.254 (192.168.4.254).
+220 (vsFTPd 3.0.2)
+Name (192.168.4.254:root): dc
+331 Please specify the password.
+Password:
+230 Login successful.
+
+//监听 tcp 21 端口  并把包放入 /root/ftp8.cap 文件内. -A 易读方式
+[root@room9pc01 ~]# tcpdump -i private1 -A -w /root/ftp8.cap tcp port 21
+tcpdump: listening on private1, link-type EN10MB (Ethernet), capture size 262144 bytes
+^C19 packets captured
+19 packets received by filter
+0 packets dropped by kernel
+
+//客户机登入,真机的ftp ,登入用户名和密码
+[root@host50 ~]# ftp 192.168.4.254
+Connected to 192.168.4.254 (192.168.4.254).
+220 (vsFTPd 3.0.2)
+Name (192.168.4.254:root): dc
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> 
+
+//读取抓包文件,过滤有密码的
+
+[root@room9pc01 ~]# tcpdump -A -r /root/ftp8.cap  | grep -i pass 
+reading from file /root/ftp8.cap, link-type EN10MB (Ethernet)
+10:27:14.934503 IP room9pc01.tedu.cn.ftp > 192.168.4.50.53520: Flags [P.], seq 21:55, ack 10, win 227, options [nop,nop,TS val 8640971 ecr 4660599], length 34: FTP: 331 Please specify the password.
+.....G.w331 Please specify the password.
+10:27:21.589900 IP 192.168.4.50.53520 > room9pc01.tedu.cn.ftp: Flags [P.], seq 10:26, ack 55, win 229, options [nop,nop,TS val 4667255 ecr 8640971], length 16: FTP: PASS abcdef123
+.G7w....PASS abcdef123
+
+//读取抓包文件,过滤有用户的字段
+[root@room9pc01 ~]# tcpdump -A -r /root/ftp8.cap  | grep -i user
+reading from file /root/ftp8.cap, link-type EN10MB (Ethernet)
+10:27:14.934388 IP 192.168.4.50.53520 > room9pc01.tedu.cn.ftp: Flags [P.], seq 1:10, ack 21, win 229, options [nop,nop,TS val 4660599 ecr 8638109], length 9: FTP: USER dc
+.G.w....USER dc
+

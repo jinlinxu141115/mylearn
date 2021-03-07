@@ -1,0 +1,413 @@
+2019.11.14　RDBMS　第二天　命令
+
+一.数据读写分离
+
+1.1MySQL读写分离
+   
+     把客户端访问时把查询请求SQL命令和写入请求SQL命令分别给不同的数据库服务器处理.
+     优势:减轻主服务器的压力.提高并发量.
+   ..主从复制应用局限性? 
+   ..如何分离MySQL读.写流量?
+   ..在客户端区分,还是在服务器端区分?
+  a)客户端区分:例如在公司明确告诉程序员使用在执行select 访问的时候访问 slave,写数据,明确访问master.
+   b)服务器端:为客户端提供统一的数据库访问接口,连接访问MySQL代理服务器.
+
+1.2添加一个MySQL代理: 为客户端提供统一的数据库访问接口.
+
+  master 服务器(4.51)  -------复制/同步---------->  slave服务器(4.52)
+             ^                      V      
+          读取/写入                      读取
+                 mysql代理服务器(4.57)            Linux客户机(4.50)
+
+1.3读写分离原理:
+
+  ..由MySQL代理面向客户端提供服务
+   --收动SQL写请求时,交给master服务器处理
+   ---收到SQL读请求时,交给slave服务器处理
+
+1.4构建思路
+  ..部署MySQL一主一从结构
+   --主服务器 192.168.4.51
+   --从服务器 192.168.4.52
+
+   ..部署MySQL代理服务器 
+  mysql中间件:架设在客户端和服务器中间的软件,(mycat,mysqlproxy,maxscale)
+
+   --装包,修改配置文件,启动服务
+   
+   ..测试配置
+    --客户端连接代理服务器访问数据.
+
+1.5部署代理服务器 maxscale服务器  
+   
+   A..修改配置文件
+  
+ [maxscale]threads=auto 服务器运行后线程数量,auto :根据cup核数,自动建立线程数量.
+  [server1] 指定数据库服务器信息
+  [MySQL Monitor] 指定被监视的数据库服务器. 知道哪个个是主,那个从,检查服务器数据库服务是否运行,以及访问权限.
+  [Read-Write Service] 定义读写分离使用的主机.57调用配置文件,访问是否存在
+  [MaxAdmin Service] 定义管理服务
+  [Read-Write Listener]定义读写分离服务使用的端口 4006
+   [MaxAdmin Listener]定义管理服务端口默认4009,修改为4016
+
+    B..)在数据库服务器上添加对应的授权用户
+    
+     监控用户:maxscalemon
+   mysql> grant replication slave ,replication client on *.* to maxscalemon@"%" identified by '123qqq...A';  //数据库服务是否运行
+    replication client sql服务器是否运行
+     路由用户:maxscalerouter
+    mysql> grant select on mysql.* to maxscalerouter@"%" identified by '123qqq...A';
+     
+    C..)启动服务
+   
+   [root@host57 ~]# maxscale -f /etc/maxscale.cnf
+   [root@host57 ~]# netstat -nltup | grep maxscale
+tcp6       0      0 :::4006                 :::*                    LISTEN      1337/maxscale       
+tcp6       0      0 :::4016                 :::*                    LISTEN   
+  [root@host57 ~]# ls /var/log/maxscale/maxscale.log //查看日志
+  [root@host57 ~]# killall -9 maxscale //如果有问题,停止服务,修改配置文件再重启
+    
+    D..)检查配置
+   
+     a)在57数据库代理服务器本机子访问管理认证.
+
+[root@host57 ~]# maxadmin -uadmin -pmariadb -P4016
+MaxScale> list servers
+Servers.
+-------------------+-----------------+-------+-------------+--------------------
+Server           | Address   | Port  | Connections | Status              
+-------------------+-----------------+-------+-------------+--------------------
+server1          | 192.168.4.51    |  3306 |    0 | Master, Running
+server2          | 192.168.4.52    |  3306 |     0 | Slave, Running
+-------------------+-----------------+-------+-------------+-------------------
+
+ b )在客户端50服务器连接代理57服务器访问数据: 
+    在数据库主服务器51添加,访问的用户)
+   1)mysql> grant select,insert on db6.* to jim@"%" identified by "123qqq...A";
+Query OK, 0 rows affected, 1 warning (0.03 sec)
+   2)50访问57主机访问数据
+   [root@host50 ~]#  mysql -h192.168.4.57 -P4006 -ujim -p123qqq...A
+//指定读写分离服务器端口号访问.
+ 
+    F..验证读写分离功能
+         1) 在主服务器51 使用root用户把表记录清空
+         delete from db6.t1 
+        2)在从服务器52 使用root用户插入1条记录
+            insert into db6.t1 values(520);
+        3)在客户端50连接57可以查看到数据
+       [root@host50 ~]# mysql -h192.168.4.57 -P4006 -ujim -p123qqq...A
+         mysql> select *  from db6.t1;
+         +------+
+      | id   |
+  
+        |  520 |
+         >insert into db6.t1 values(888);
+        4)在主服务器上使用root用户查看记录
+       mysql> select *  from db6.t1;  //看不到520的记录,证明读是访问520从服务器
+          能看到888记录
+        5)在客户端连接57服务器可以查看到记录
+        [root@host50 ~]# mysql -h192.168.4.57 -P4006 -ujim -p123qqq...A
+         能查看 888和520两个记录
+
+     G..) 一台Mysql代理风险 单点故障
+二 MySQL的多实列概述
+
+  ..什么是多实列
+  --在一台物理主机上运行 多个数据库服务器
+  
+   ..为什么要使用多实列?
+   --节约运维成本
+    --提供硬件利用率
+ 
+
+2.1 安装配置多实列
+    a.安装软件
+      --解压软件,修改目录名,修改PATH路径
+  [root@host58 ]# ls /usr/local/mysql/
+bin  COPYING  docs  include  lib  man  README  share  support-files
+
+ bin:mysql 命令    include 头文件 lib模块文件  man 帮助 share帮助文档
+supper-files 配置文件模板 
+ 
+     b. 主配置文件/etc/my.cnf
+       --每个实列要有独立:数据库目录,端口,
+     --socket文件,pid文件,错误日志文件
+     
+     socket文件和 pid文件 是数据库服务器启动时候生成,
+     pid文件存储当前mysqld进程号     
+     socket文件(套接字节文件),系统启动时候才会出现, 当自己访问自己时,通过.sock文件 访问自己
+   
+       c.管理多实列
+         .启动服务
+          ]#mysqld_multi  start 实列编号  
+          [root@host58 mysql]# mysqld_multi start 1  //启动 mysqld1服务
+           
+          .停止服务
+           ]# mysqld_multi --user=root --password=密码  stop  实列编号
+   [root@host58 mysql]# mysqld_multi --user=root --password=123456 stop 2
+
+         d.客户端访问
+        ]# mysql -uroot -p"初始密码" -S sock文件
+         mysql> alter user root@"localhost" identified by "新密码"; [root@host58 mysql]# mysql -uroot -p'k,?i*7awmmtT' -S /dir1/mysqld1.sock
+ mysql> alter user root@"localhost" identified by "123456";//修改初始密码
+[root@host58 mysql]# mysql -uroot -p'123456' -S /dir1/mysqld1.sock
+
+====================================================
+案例 一 :搭建代理服务器,读写分离 (  配置57服务器. 51为主服务器,52为从服务器)
+=====================================================
+
+[student@room9pc01 mysql]$ scp maxscale-2.1.2-1.rhel.7.x86_64.rpm root@192.168.4.57:/root/
+[root@host57 ~]# rpm -ivh maxscale-2.1.2-1.rhel.7.x86_64.rpm 
+
+主配置文件 /etc/maxscale.cnf  
+日志文件  /var/log/maxscale/   服务启动信息和报错信息
+[root@host57 ~]# rpm -ql maxscale   查看服务程序安装在那边? 
+[root@host57 ~]# max tab tab      //相关命令
+maxadmin        maxbinlogcheck  maxpasswd       
+maxavrocheck    maxkeys         maxscale
+
+[root@host57 ~]# vim /etc/maxscale.cnf
+
+[maxscale]        //  定义线程个数
+threads=auto
+[server1]         //定义数据库服务器
+type=server
+address=192.168.4.51   //master主机ip
+port=3306
+protocol=MySQLBackend    //协议后端S服务器
+
+[server2]            //定义数据库服务器
+type=server
+address=192.168.4.52   //slave 主机IP地址
+port=3306
+protocol=MySQLBackend
+
+[MySQL Monitor]    //定义要监视的数据库节点(监控谁是主从设备,已经数据库服务运行情况)
+type=monitor
+module=mysqlmon
+servers=server1,server2  //主,从数据库的主机名
+user=maxscalemon         //监控用户
+passwd=123qqq...A        //密码
+monitor_interval=10000
+
+[Read-Write Service]    //定义读写分离的数据库节点
+type=service
+router=readwritesplit
+servers=server1,server2   //主,从数据库的主机名  
+user=maxscalerouter       //路由用户  (查看谁有权限,访问主从数据的访问权利)
+passwd=123qqq...A         //密码
+max_slave_connections=100%
+
+[MaxAdmin Service]       //定义管理服务 利用路由用户,才有密码形式
+type=service
+router=cli
+
+[Read-Write Listener]  //定义读写分离服务器端口号
+type=listener
+service=Read-Write Service
+protocol=MySQLClient
+port=4006
+
+[MaxAdmin Listener]   //定义管理服务端口号
+type=listener
+service=MaxAdmin Service
+protocol=maxscaled
+socket=default
+port=4016   //自定义的监控服务的端口4016
+ 
+[root@host57 ~]# maxscale -f /etc/maxscale.cnf
+ [root@host57 ~]# netstat -nltup | grep maxscale
+tcp6       0      0 :::4006                 :::*                    LISTEN      1337/maxscale       
+tcp6       0      0 :::4016                 :::*                    LISTEN   
+  [root@host57 ~]# ls /var/log/maxscale/maxscale.log //查看日志
+  [root@host57 ~]# killall -9 maxscale //如果有问题,停止服务,修改配置文件再重启
+    
+
+检查测试验证配
+    a)在57数据库代理服务器本机子上,进行验证
+[root@host57 ~]# maxadmin -uadmin -pmariadb -P4016 //测试1在57代理服务器验证
+MaxScale> list servers
+Servers.
+//查看如果监视不是主从关系,检查主从服务器运行状态.down是没开启.
+ //有可以监控maxscalemon的授权的权限没有给予正确.然后再停maxscale服务,再启动
+-------------------+-----------------+-------+-------------+--------------------
+Server           | Address   | Port  | Connections | Status              
+-------------------+-----------------+-------+-------------+--------------------
+server1          | 192.168.4.51    |  3306 |    0 | Master, Running
+server2          | 192.168.4.52    |  3306 |     0 | Slave, Running
+-------------------+-----------------+-------+-------------+-------------------
+MaxScale> exit  //断开连接
+
+   b)在客户端50服务器连接代理57服务器访问数据
+
+     1)在51主服务器上先授权jim客户访问:
+mysql> grant select,insert on db6.* to jim@"%" identified by "123qqq...A";
+Query OK, 0 rows affected, 1 warning (0.03 sec)
+      2)在50客户端进行远程访问
+     [root@host50 ~]#  mysql -h192.168.4.57:-P4006 -ujim -p123qqq...A 
+//必须指定数据库分离服务器的端口号 4006.
+mysql> select * from db6.t1;   //查看是否能看到db6.数据访问
++------+
+| id   |
++------+
+|   99 |
+|   95 |
+|   91 |
+|   99 |
+|  998 |
+|  666 |
+|  888 
+mysql> select @@hostname;     //查看访问数据库服务器的主机名
++------------+
+| @@hostname |
++------------+
+| host52     |
++------------+
+1 row in set (0.00 se|
+
+mysql> select  user();    //查看当前访问的用户和访问的源IP地址
++------------------+
+| user()           |
++------------------+
+| jim@192.168.4.57 |
++------------------+
+1 row in set (0.00 sec
+=====================================================
+案例二 配置多实列  58服务器  配置实列1,实列2
+======================================================
+
+[root@host58 ~]# yum -y install libaio
+[root@host58 ~]# useradd   mysql
+[root@host58 mysql]# id mysql
+uid=1000(mysql) gid=1000(mysql) 组=1000(mysql)
+
+[student@room9pc01 mysql]$ scp mysql-5.7.20-linux-glibc2.12-x86_64.tar.gz root@192.168.4.58:/root/
+
+[root@host58 ~]# tar -zxvf mysql-5.7.20-linux-glibc2.12-x86_64.tar.gz
+[root@host58 ~]# mv mysql-5.7.20-linux-glibc2.12-x86_64 /usr/local/mysql
+[root@host58 ~]# ls /usr/local/mysql/
+
+[root@host58 mysql]# vim /etc/bashrc
+export PATH=/usr/local/mysql/bin:$PATH  //把mysql软件命令变量变成 服务器系统变量
+
+#wq
+[root@host58 mysql]# source /etc/bashrc   //刷新系统变量
+
+[root@host58 mysql]# mysql tab +tab      //查收系统变量是否成功
+mysql                       mysql_embedded
+mysqladmin                  mysqlimport
+mysqlbinlog                 mysql_install_db
+mysqlcheck                  mysql_plugin
+[root@host58 mysql]# vim /etc/my.cnf
+
+[mysqld_multi]                           //启用多实列
+mysqld=/usr/local/mysql/bin/mysqld_safe   //指定进程文件路径
+mysqladmin=/usr/local/mysql/bin/mysqladmin //指定管理命令路径
+user=root                                   //指定进程用户
+[mysqld1]          //实列进程名称,X代表实列编号,如[mysqldX],多个库,配置对应多个进程
+port=3307                              //端口号
+datadir=/dir1                          //数据库目录 ,要手动创建
+pid-file=/dir1/mysqld1.pid            //进程pid号文件位置
+log-error=/dir1/mysqld1.err           //错误日志位置
+socket=/dir1/mysqld1.sock              //指定sock文件的路径和名称
+[mysqld2]
+port=3308
+datadir=/dir2
+pid-file=/dir2/mysqld2.pid
+log-error=/dir2/mysqld2.err
+socket=/dir2/mysqld2.sock
+~            
+#wq
+[root@host58 mysql]# mkdir /dir1  //创建存储数据的目录
+[root@host58 mysql]# mkdir /dir2
+------------------------------------------------------------------------------------------------------------------------------
+启动 实列1 : mysqld1
+[root@host58 mysql]# mysqld_multi start 1  //启动 mysqld1服务
+2019-11-14T08:00:47.234656Z 1 [Note] A temporary password is generated for root@localhost: k,?i*7awmmtT   //初始密码,在启动时候在最后一行.
+[root@host58 mysql]# ls /dir1
+auto.cnf        ib_logfile0  mysql        mysqld1.sock        sys
+ib_buffer_pool  ib_logfile1  mysqld1.err  mysqld1.sock.lock
+ibdata1         ibtmp1       mysqld1.pid  performance_schema
+[root@host58 mysql]# mysql -uroot -p'k,?i*7awmmtT' -S /dir1/mysqld1.sock
+                                //利用管理员root初始密码登入
+mysql> alter user root@"localhost" identified by "123456";//修改初始密码
+Query OK, 0 rows affected (0.00 sec)
+mysql> exit
+Bye
+[root@host58 mysql]# mysql -uroot -p'123456' -S /dir1/mysqld1.sock
+[root@host58 mysql]# netstat -natup
+
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+
+tcp6       0      0 :::3307                 :::*                    LISTEN      1476/mysqld      
+              
+[root@host58 mysql]# mysqld_multi --user=root --password=123456 stop 1
+  //停止服务   
+[root@host58 mysql]# netstat -natup |grep mysqld
+ ---------------------------------------------------------------------------------------------------------------------------------         
+启动 实列2:mysqld
+[root@host58 mysql]# mysqld_multi start 2  //启动 mysqld2服务
+2019-11-14T08:00:47.234656Z 1 [Note] A temporary password is generated for root@localhost: !l7)i22,ko5I   //初始密码,在启动时候在最后一行.
+[root@host58 mysql]# ls /dir2
+auto.cnf        ib_logfile0  mysql        mysqld2.sock        sys
+ib_buffer_pool  ib_logfile1  mysqld2.err  mysqld2.sock.lock
+ibdata1         ibtmp1       mysqld2.pid  performance_schema
+[root@host58 mysql]# mysql -uroot -p'!l7)i22,ko5I' -S /dir2/mysqld2.sock
+                                //利用管理员root初始密码登入
+mysql> alter user root@"localhost" identified by "123456";//修改初始密码
+Query OK, 0 rows affected (0.00 sec)
+mysql> exit
+Bye
+[root@host58 mysql]# mysql -uroot -p'123456' -S /dir2/mysqld2.sock
+[root@host58 mysql]# netstat -natup
+
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+
+tcp6       0      0 :::3308                 :::*                    LISTEN      1476/mysqld      
+              
+[root@host58 mysql]# mysqld_multi --user=root --password=123456 stop 2
+  //停止服务   ,
+[root@host58 mysql]# netstat -natup |grep mysqld
+[root@host58 dir2]# ps -C mysqld
+  PID TTY          TIME CMD
+ 1699 pts/0    00:00:00 mysqld
+
+[root@host58 dir2]# cat mysqld2.pid    //存储当前mysqld的进程号
+1699
+
+====================================================
+案例 3   配置58 主机 允许50访问 58服务器上实列2的服务器 ,启动实列2服务器的binlog日志
+=====================================================
+
+
+[root@host58 dir1]# mysql -uroot -p'123456' -S /dir2/mysqld2.sock
+mysql> grant all on *.* to admin1@"%" identified by "123456";
+
+[root@host50 mysql]# mysql -h192.168.4.58 -P3308 -uadmin1 -p123456
+//远程连接 必须加端口号
+
+
+[root@host58 dir1]# vim /etc/my.cnf
+[mysqld2]    //启动binlog日志   
+port=3308
+datadir=/dir2
+pid-file=/dir2/mysqld2.pid
+log-error=/dir2/mysqld2.err
+socket=/dir2/mysqld2.sock
+log_bin
+server_id=2          //服务id必须添加
+[root@host58 mysql]# mysqld_multi --user=root --password=123456 stop 2
+  // 实列2 服务
+[root@host58 dir1]# mysqld_multi start 2
+[root@host58 dir1]# mysql -uroot -p'123456' -S /dir2/mysqld2.sock
+mysql> show master status;
++-------------------+----------+--------------+------------------+-------------------+
+| File              | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++-------------------+----------+--------------+------------------+-------------------+
+| host58-bin.000001 |      154 |              |                  |                   |
++-------------------+----------+--------------+------------------+---------
+
+====================================================
+
+一个MySQL客户可以两种不同的方式连接mysqld服务器：Unix套接字，它通过在文件系统中的一个文件(缺省“/tmp/mysqld.sock”)进行连接；或TCP/IP，它通过一个端口号连接。Unix套接字比TCP/IP更快，但是只有用在连接同一台计算机上的服务器。如果你不指定主机名或如果你指定特殊的主机名localhost，使用Unix套接字。
+

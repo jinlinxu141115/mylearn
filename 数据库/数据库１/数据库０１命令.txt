@@ -1,0 +1,115 @@
+2019.11.6　数据库　第一天　命令
+
+１．grep –i  'password' /var/log/mysqld.log　＃查询初始密码
+２．mysql -uroot -p'mtoa>Av<p6Yk' //初始密码登录
+３．alter user  root@”localhost” identified by "123qqq…A";  //修改登陆密码
+４． mysql -uroot –p123qqq…A　　//登入新密码
+５．show variables like "%password%";  //查看含有password的变量
+ 6 .临时设置密码策略
+msyql> set global validate_password_policy=0;
+   策略名称　　　验证方式
+　　０ (low)       长度
+　　１（medium）　　长度，数字，大小写，和特殊字符
+　　２ (strong)　　　长度，数字，大小写，和特殊字符　字典文件
+　　mysql>set global validate_password_lengthe=6;
+
+7.永久配置密码策略：
+　[mysqld]
+  validate_passwrod_policy=0
+   validate_password_length=6
+８．select database()； #查看在ｓｑｌ里面的当前位置．
+9.use mysql;   //切换到mysql库。
+10.常用当sql命令分类
+--管理数据库使用sql（结构化查询语言）
+ a, DDL 数据定义语言 如 create 、alter 、drop
+ b，DML 数据操作语言 如：insert 、update 、delete
+ c，DCL 数据控制语言 ru：grant、revoke
+ d，DTL 数据事物语言 如： commit，rollback，savepoint
+
+11，库管理命令 ：库类似文件夹，用来存储表。
+--show databases；
+--select user（）；//显示连接用户
+--use 库名；切换库
+--select database（）、、查询当前所在库
+--create database 库名（）；创建新库
+--show tables； 显示已有的表
+--drop database 库名; //删除库
+
+12，表管理命令
+
+--create table 库名.表名（ 字段名1 类型（宽度），⁯字段名2 类型（宽度））
+    DEFAULT CHARSET=utf8;
+--desc 库名.表名；  //查看表结构
+--drop table  库名.表名；  ## 删除表
+--select  * from 库名.表名 ；  ##查看表记录
+--insert into 库名.表名 values（值列表）；
+--update 库名.表名 set 字段=值；
+--delete from 表名；##删除表记录
+
+13.mysql 数据类型
+
+    a.字符串类型
+        1）定长char  ：最多个数255，不够指定字符个数时右侧用空格补全。
+           字符个数超出时，无法写入数据。
+         2）变长varchar：按照实际大小分配存储空间，字符个数超出时，无法写入
+      大文本类型：test、blob  字符大于655535存储是使用。
+
+    b.整数型：只能存储整数
+    类型              名称                   有符号范围                无符号范围
+    tinyint       微小整数              -128-127                      0-255
+   smallint      小整数             -32768 ~32767                 0-65535
+  mediumint   中整数                    -2（23方）-2（23方）-1     0-2（24）-1
+   int              大型整数       -2（31）-2（31方）-1        0-2（32方）-1
+  bigint         极大型整数        -2（63方）- 2（63方）-1   0-2（64方）-1
+  unsigned     使用无符号存储范围
+ 
+   c.浮点型
+         --格式1 : 字段名  类型;
+         --格式2 : 字段名  类型(总宽度,小数位数);
+    种类-------符号位-------------指数位----------------尾数位---- 
+float---第31位(占1bit)---第30-23位(占8bit)----第22-0位(占23bit) 
+double--第63位(占1bit)---第62-52位(占11bit)---第51-0位(占52bit) 
+
+取值范围主要看指数部分： 
+float的指数部分有8bit(2^8)，由于是有符号型，所以得到对应的指数范围-128~128。 
+double的指数部分有11bit(2^11)，由于是有符号型，所以得到对应的指数范围-1024~1024。 
+由于float的指数部分对应的指数范围为-128~128，所以取值范围为： 
+-2^128到2^128，约等于-3.4E38 — +3.4E38 
+       
+    d.日期时间类型
+    
+         1) 日期时间 datetime
+         --范围:1000-01-01 00:00:00 ~9999-12-31 23:59:59
+         --格式:yyyymmddhhmmss     #为给赋值是,字段值为空(NULL)
+         2)时间日期 timestamp
+         --范围:1970-01-01 00:00:00 ~ 2038-01-19 00:00:00
+         --格式:yyyymmddhhmmss       #当未给字段赋值时,字段以当前系统时间
+         3)date
+           --范围: 0001-01-01 ~ 9999-12-31
+           --格式: yyyymmdd
+          4)年 year                 #要求使用4位数进行赋值, 当使用2位数赋值时:
+           --范围:1901~ 2155               # 01~69视为 2001~ 2069
+           --格式;yyyy                #70~99视为1970~1999
+            5)时间time
+            -格式:HH:MM:SS
+       f.时间函数
+         curtime()获取当前系统时间 ,curdate()获取当前系统日期
+            now()湖区系统日期和时间,year(now())获取年
+           month(now())获取月.显示月select month(now())
+              day()获取日   date获取日期   time()获取时间.
+
+         g.枚举类型
+         enum 单选:
+              --格式:字段名 enum(值1,值2,值N)
+              --仅能选择一个值
+             --字段值必须在类别里选择
+           列如: sex enum("boy","girl","no")
+            set 多选:
+               --格式: 字段名 set (值1,值2,值N)
+               --选择一个或多个值
+               --字段值必须在列表里选择
+             例如: likes  set("eat","game","music","momey")
+           
+
+
+  

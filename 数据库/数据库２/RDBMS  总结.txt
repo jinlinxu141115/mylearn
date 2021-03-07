@@ -1,0 +1,31 @@
+2019.11.18　RDBMS　第5天　
+
+
+1.mysql主从同步:
+                  主从同步工作过程
+                  主从同步结构模式
+                  主从同步结构复制模式
+
+
+2.mysql数据读写分离: 软件mascale + mysql 一主一从
+                       缓解服务器压力.(单点故障)
+                      select
+                      insert update delete
+
+
+
+
+  mysql多实列:节约服务器资源.
+
+
+3.数据分片(分库,分表) :软件 MyCAT  (分片规则 10种 sharding-by-intfile mod-long)
+                       schema.xml  rules.xml  server.xm
+                       添加新库,新表.
+                       适合数据大量写入的环境.
+
+
+
+4.MHA集群
+
+
+5.PXC , 存储引擎

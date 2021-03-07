@@ -1,0 +1,212 @@
+https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.17/#pod-v1-core   每个资源相信说明
+
+istio  网格 监控每个pod监控情况,流量调度   LBaaS //负载均衡服务
+
+Helm管理器
+一 ..  API server 是整个k8s,发动端,也是唯一一个etcd的客户端,服务器于所有客户端,所有客户端的.支持http api 协议.支持json.(表针状态转移)
+
+http:  //  localhost:  9999   / restfulservices   /  v1  /  users  / {id}
+
+Protocol    Host(doman name) 端口    Application Context  Version Resource 
+
+Parameter 
+
+二..kubectl api-version //查看当前k8s支持api接口的版本.
+ ..api接口中的资源分为多个逻辑组合:
+   .每个组合:API Group  API群组//好处每个组的属性,可以独立演进.
+   .每个组合可以多版本进行.
+   .Api server接收和返回的使用JSON对象都遵循同一个模式,它们都具有"kind"和"apiVersion",用户表示对象的资源类型,APi群组及相应的版本.
+     .大多数的对象或者列表类型的资源还需要具有三个嵌套型的儿子的metadata,spec和status
+
+    ..metadata字段为资源提供元数据信息,例如名称,隶属的名称空间和标签等;
+      ..spec用于定义用户期望的状态,不同的资源类型,其状态的意义各有不同,例如Pod资源最为核心的功能是在运行容器.
+      ..status则记录这活动对象的当前状态信息.他由kubenetes系统自行维护,对用户来说至少只读的字段.
+
+
+三..和解循环(Reconciliation Loop)
+..客户端向API server 提交POST请求以创建对象
+   .通过JSON格式的body提交
+   .YAML格式需要事先完成项JSON的转换
+    .对象配置信息保存在etcd中,其定义出的状态也称为 "期望的状态 (spec)"
+     .控制器
+
+  
+
+四.客户端以声明式进行k8s进行互动.相对好处可以重复利用.
+
+
+五,集群内部 , Pod 10.244.0.0/16 的服务器,
+ 怎么能被集群外部的客户端进行访问?
+   .Service  NodePort //访问任何节点都能访问. 随机映射端口.
+    .hostPort
+       .hostNetwork
+
+六.通常情况,一个Pod只设置一个Containers ,如果需要辅佐这个容器功能,使用sidecar
+
+
+
+七. label ,label selector (标签选择器  类似范围选择):每一资源,都可以有标签.
+
+  .标签就是"键值"类型的数据,它们可以于资源创建是直接指定,也可随这按需添加于活动对象,而后即可由标签选择器进行匹配度检查从完成资源挑选.
+    ..一个对象可拥有不止一个标签,而同一个标签可以被添加至多个资源之上.
+    ..实践中,可以为资源附加多个不同维度的标签一实现灵活的资源分组管理功能,例如版本标签,环境标签,分成架构标签等,用于交叉标识同一个资源所属的不同版本,环境及框架层级等.
+    ..标签中的键名称通常由键前缀和键名组成,其中键前缀可选,其格式形如"KEY_PREFIX/KEY_NAME"
+    ..键名之多能够使用63个字符,可以使用字母,数字,连接号(-),下划线(_),点号(.)等字符,且只能以字母或者数字开头.
+   ..键前缀必须为DNS子域名格式.且不能超过253个字符.省略键前缀是,键将被视为用户私有数据,不过有Kubernetes系统组件或者第三份组件自动为用户资源添加的键必须使用键前缀,而"kubernetes.io/"前缀预留给kubernetes的核心组件使用.
+   ..标签中的键值必须不能超过最多于63个字符,他要me字母或者数字开头及结尾,中间使用了字母,数字,连接号,下划线,点号等字符的数据.
+
+   标签选择器(Label Selector)
+
+   .标签选择器用于表达标签的查询条件或者选择标准,Kubernetes API目前支持两个选择器:
+
+    ..基于等值关系 (equality -based )
+      .操作符有 = ==和!=三种,其中有前两个意义相同,都表示"等值"关系,最后一个表示"不等"关系
+      ..基于集合关系(set - based)
+       .KEY in (VALUE1,VALUE2....)
+         .KEY not in (VALUE1,VALUE2...)
+           .KEY : 所有存在键名标签的资源.
+              .!KEY:所有不存在此键名标签的资源.
+       ..使用标签选择器时还将遵循以下逻辑:
+         .同时指定的多个选择器之间的逻辑关系为"与"操作.
+          .使用空值的标签选择器意味着每个资源对象都被选中.
+          .空的标签选择器将无法选出任何资源.
+------------------------------------------------------------------------------------------------------------------------------------
+定义标签选择器的方式
+
+.kubernetes的诸多资源对象必须以标签选中器的方式关联到Pod资源对象,例如Service,Deployment和ReplicaSet类型的资源等.它们在spec字段中嵌套使用嵌套的"selector"字段,通过"matchLabels"来指定标签选择器,有的甚至还支持使用"matchExpressions",构造复杂的标签选中机制.
+
+.matchLabels : 通过直接给定键值对指定标签选择器.;
+.matchExpression:基于表达式指定的标签选中器列表,每个选择器形如"{key:KEY_NAME,operator:OPERATOR,....}",选择器列表间为"逻辑与"关系;
+ .使用In或NotIn操作符时,其values非必须为非空的字符串表,二使用Exists或者DostNotExist,器values必须为空
+
+
+
+
+
+
+1.ca认证的路径   ..任何人接人端口API Server ,API Server 都需要双向认证.
+  /etc/kubernets/kpi  .
+
+2.Scheduler
+  Controller
+   NOde:节点重要工作,运行Pod,把server转换为iptables  kube-proxy 随时watchde service中的变得.
+ 3.k8s最重要组件,Pod ,Pod Contronller ,
+
+Pod Contronller:最主要的类型,Deplopyment -> nginx -deploy -> nginx Pod
+Server  : 资源类型. --> 创建特定nginx - server  调度
+
+4.[root@master20 kubernetes]# kubectl get nodes  //查看集群节点运行状态.
+NAME       STATUS   ROLES    AGE   VERSION
+master20   Ready    master   42h   v1.17.0
+node21     Ready    <none>   41h   v1.17.0
+node22     Ready    <none>   39h   v1.17.0
+node23     Ready    <none>   39h   v1.17.0
+
+5.[root@master20 kubernetes]# kubectl get ns  查看集群命名空间
+NAME              STATUS   AGE
+default           Active   42h
+kube-node-lease   Active   42h
+kube-public       Active   42h
+kube-system       Active   42h
+
+6.[root@master20 kubernetes]# kubectl get pods -n kube-system -o wide
+NAME                               READY   STATUS    RESTARTS   AGE   IP             NODE       NOMINATED NODE   READINESS GATES
+coredns-6955765f44-d458m           1/1     Running   1          42h   10.244.0.5     master20   <none>           <none>
+coredns-6955765f44-q244c           1/1     Running   1          42h   10.244.0.4     master20   <none>           <none>
+etcd-master20                      1/1     Running   1          42h   192.168.1.20   master20   <none>           <none>
+kube-apiserver-master20            1/1     Running   1          42h   192.168.1.20   master20   <none>           <none>
+kube-controller-manager-master20   1/1     Running   1          42h   192.168.1.20   master20   <none>           <none>
+kube-flannel-ds-amd64-8gt4b        1/1     Running   1          39h   192.168.1.23   node23     <none>           <none>
+kube-flannel-ds-amd64-cs5r4        1/1     Running   2          39h   192.168.1.22   node22     <none>           <none>
+kube-flannel-ds-amd64-cxdlg        1/1     Running   1          42h   192.168.1.20   master20   <none>           <none>
+kube-flannel-ds-amd64-v2czg        1/1     Running   1          41h   192.168.1.21   node21     <none>           <none>
+kube-proxy-gkr7g                   1/1     Running   1          39h   192.168.1.23   node23     <none>           <none>
+kube-proxy-m46q4                   1/1     Running   1          41h   192.168.1.21   node21     <none>           <none>
+kube-proxy-n2zgl                   1/1     Running   1          39h   192.168.1.22   node22     <none>           <none>
+kube-proxy-ntjbq                   1/1     Running   1          42h   192.168.1.20   master20   <none>           <none>
+kube-scheduler-master20            1/1     Running   1          42h   192.168.1.20   master20   <none>           <none>
+
+7.[root@master20 kubernetes]# kubectl api-resources  //查看k8s支持资源
+NAME                              SHORTNAMES   APIGROUP                       NAMESPACED   KIND
+bindings                                                                      true         Binding
+componentstatuses                 cs                                          false        ComponentStatus
+configmaps                        cm                                          true         ConfigMap
+
+8.创建命名空间和删除命名空间
+[root@master20 kubernetes]# kubectl create namespace develop  //创建
+namespace/develop created
+[root@master20 kubernetes]# kubectl delete namespaces develop  //删除develop
+namespace "develop" deleted    
+[root@master20 kubernetes]# kubectl delete ns/testing  //删除命名空间
+namespace "testing" deleted
+
+9.查看命名空间信息
+
+[root@master20 kubernetes]# kubectl get ns/default -o yaml //
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: "2019-12-28T07:14:27Z"
+  name: default
+  resourceVersion: "151"
+  selfLink: /api/v1/namespaces/default
+  uid: 133e83c3-82c2-4a16-b94b-3e43bb833f6e
+spec:
+  finalizers:
+  - kubernetes
+status:
+  phase: Active
+10.查看命名空间状态信息
+
+[root@master20 kubernetes]# kubectl describe ns/default
+Name:         default
+Labels:       <none>
+Annotations:  <none>
+Status:       Active
+
+No resource quota.
+
+No LimitRange resource.
+
+
+10.扩容Pod
+
+
+[root@master20 ~]# kubectl scale --replicas=3 deployment ngx-dep //创建三份
+
+
+
+11.真机访问虚拟机nginxfuw
+
+首先设置server时要用
+
+[root@master20 ~]# kubectl create service nodeport ngx-dep --tcp=80:80
+service/ngx-dep created
+[root@master20 ~]# kubectl get svc
+NAME         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+kubernetes   ClusterIP   10.96.0.1      <none>        443/TCP        43h
+ngx-dep      NodePort    10.96.184.93   <none>        80:31265/TCP   17s
+
+然后在真机上.随便访问一下 192.168.1.22
+
+http://192.168.1.22:31265/
+
+
+
+12.[root@master20 basic]# vim develop-ns.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: develop
+
+
+[root@master20 basic]# kubectl create -f develop-ns.yaml 
+namespace/develop created
+
+
+[root@master20 basic]# kubectl apply -f prod-ns.yaml //没有就创建,有的就是不改变   
+namespace/prod created
+
+
+
+

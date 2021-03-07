@@ -1,0 +1,247 @@
+[root@master20 pki]# kubectl delete node  node23
+
+
+[ERROR ImagePull]: failed to pull image k8s.gcr.io/kube-apiserver:v1.17.0: output: Error response from daemon: Get https://k8s.gcr.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+, error: exit status 1
+	[ERROR ImagePull]: failed to pull image k8s.gcr.io/kube-controller-manager:v1.17.0: output: Error response from daemon: Get https://k8s.gcr.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+, error: exit status 1
+	[ERROR ImagePull]: failed to pull image k8s.gcr.io/kube-scheduler:v1.17.0: output: Error response from daemon: Get https://k8s.gcr.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+, error: exit status 1
+	[ERROR ImagePull]: failed to pull image k8s.gcr.io/kube-proxy:v1.17.0: output: Error response from daemon: Get https://k8s.gcr.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+, error: exit status 1
+	[ERROR ImagePull]: failed to pull image k8s.gcr.io/pause:3.1: output: Error response from daemon: Get https://k8s.gcr.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+, error: exit status 1
+	[ERROR ImagePull]: failed to pull image k8s.gcr.io/etcd:3.4.3-0: output: Error response from daemon: Get https://k8s.gcr.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+, error: exit status 1
+	[ERROR ImagePull]: failed to pull image k8s.gcr.io/coredns:1.6.5: output: Error response from daemon: Get https://k8s.gcr.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+
+flannel组件
+sudo docker pull jmgao1983/flannel:v0.10.0-amd64
+sudo docker tag jmgao1983/flannel:v0.10.0-amd64 quay.io/coreos/flannel:v0.10.0-amd64
+
+kubeadm join 192.168.1.20:6443 --token e1vlp8.l345m8xeyjj968sd \
+    --discovery-token-ca-cert-hash sha256:e0a0a64f3771cd48aa713e29ee57ff771eabdff47a4e289f275176c5eee3a217
+
+
+[root@master20 yum.repos.d]# history
+    1  history -w
+    2  history -w
+    3  halt -p
+    4  ifconfig 
+    5  eip 20
+    6  hostnamectl set-hostname master20
+    7  reboot
+    8  ifconfig
+    9  vim /etc/hosts
+   10  scp /etc/hosts node21:/etc/hosts
+   11  scp /etc/hosts node22:/etc/hosts
+   12  scp /etc/hosts node23:/etc/hosts
+   13  vim /etc/chrony.conf 
+   14  systemctl restart chronyd
+   15  chronyc sources -v
+   16  for i in node21 node22 node23; do scp /etc/chrony.conf $i:/etc/chrony.conf; done
+   17  systemctl enable chronyd
+   18  history
+   19  yum -y wget
+   20  yum -y install wget
+   21  cd /etc/yum.repos.d/
+   22  wget https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+   23  ls
+   24  scp docker-ce.repo node21:/etc/yum.repos.d/
+   25  scp docker-ce.repo node22:/etc/yum.repos.d/
+   26  scp docker-ce.repo node23:/etc/yum.repos.d/
+   27  yum -y install docker-ce
+   28  uname -r
+   29  sudo yum update
+   30  wget http://mirror.centos.org/centos/7/extras/x86_64/Packages/container-selinux-2.74-1.el7.noarch.rpm
+   31  ls
+   32  wget -O /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+   33  ls
+   34  rm -rm local.repo 
+   35  rm -rr local.repo 
+   36  rm -rf local.repo 
+   37  yum install epel-release
+   38  yum makecache
+   39  yum repolist
+   40  yum -y install docker-ce
+   41  ls
+   42  scp CentOS-Base.repo node21:/etc/yum.repos.d/
+   43  scp CentOS-Base.repo node22:/etc/yum.repos.d/
+   44  scp CentOS-Base.repo node23:/etc/yum.repos.d/
+   45  vim CentOS-Base.repo 
+   46  vim /usr/lib/systemd/system/docker.service 
+   47  systemctl start docker
+   48  systemctl daemon-reload
+   49  systemctl start docker
+   50  docker images
+   51  scp /usr/lib/systemd/system/docker.service node21:/usr/lib/systemd/system/docker.service
+   52  scp /usr/lib/systemd/system/docker.service node22:/usr/lib/systemd/system/docker.service
+   53  scp /usr/lib/systemd/system/docker.service node23:/usr/lib/systemd/system/docker.service
+   54  docker info
+   55  vim kube.repo
+   56  yum repolist
+   57  yum list all | grep "^kube"
+   58  yum -y install kubeadm kubelet kubectl
+   59  rpm -ql kubelet
+   60  rpm -ql kubeadm
+   61  cd ~
+   62  ls
+   63  yum repolist
+   64  kubeadm init --kubernetes-version="v1.17.0" --pod-netword-cidr="10.244.0.0/16"
+   65  kubeadm config print
+   66  kubeadm -help
+   67  kubeadm -h
+   68  kubeadm config -h
+   69  kubeadm config  print
+   70  kubeadm config  print -h
+   71  kubeadm config  print init-defaults
+   72  kubeadm init --kubernetes-version="v1.17.0" --pod-netword-cidr="10.244.0.0/16" --images-repository="gcr.azk8s.cn"
+   73  kubeadm init  --images-repository="gcr.azk8s.cn"
+   74  kubeadm init 
+   75  docker images
+   76  systemctl enable kubelet.service
+   77  systemctl start  kubelet.service
+   78  kubeadm init 
+   79  docker pull coredns/coredns:1.6.5
+   80  docker images
+   81  docker tag docker.io/coredns/coredns:1.3.1 k8s.gcr.io/coredns:1.3.1
+   82  docker tag docker.io/coredns/coredns:1.6.5 k8s.gcr.io/coredns:1.6.5
+   83  docker images
+   84  docker pull mirrorgooglecontainers/etcd:3.4.3-0
+   85  docker pull mirrorgooglecontainers/etcd:3.4.3
+   86  docker pull mirrorgooglecontainers/etcd:3.4.3-0
+   87  docker pull mirrorgooglecontainers/pause:3.1
+   88  docker tag docker.io/mirrorgooglecontainers/pause:3.1 k8s.gcr.io/pause:3.1
+   89  docker images
+   90  docker pull mirrorgooglecontainers/kube-proxy:v1.17.0
+   91  docker pull mirrorgooglecontainers/kube-proxy:v1.14.0
+   92  docker pull registry.cn-beijing.aliyuncs.com/zhoujun/etcd:3.4.3-0
+   93  docker pull gcr.azk8s.cn/google_containers/kube-proxy:v1.17.0
+   94  docker images
+   95  docker tag gcr.azk8s.cn/google_containers/kube-proxy:v1.17.0 k8s.gcr.io/kube-proxy:v1.17.0
+   96  docker pull gcr.azk8s.cn/google_containers/etcd:3.4.3-0
+   97  docker images
+   98  docker tag gcr.azk8s.cn/google_containers/etcd:3.4.3-0 k8s.gcr.io/etcd:3.4.3-0
+   99  docker pull gcr.azk8s.cn/google_containers/kube-scheduler:v1.17.0
+  100  docker tag gcr.azk8s.cn/google_containers/kube-scheduler:v1.17.0  k8s.gcr.io/kube-scheduler:v1.17.0
+  101  docker pull gcr.azk8s.cn/google_containers/kube-controller-manager:v1.17.0
+  102  docker tag gcr.azk8s.cn/google_containers/kube-controller-manager:v1.17.0 k8s.gcr.io/kube-controller-manager:v1.17.0
+  103* docker pull gcr.azk8s.cn/google_containers/kube-apiserve
+  104  docker tag gcr.azk8s.cn/google_containers/kube-apiserver:v1.17.0  k8s.gcr.io/kube-apiserver:v1.17.0
+  105  docker images
+  106  kubeadm config imges list
+  107  kubeadm config images list
+  108  docker images
+  109  kubeadm init --pod-network-cidr="10.244.0.0/16"
+  110  mkdir .kube
+  111  cp /etc/kubernetes/admin.conf .kube/config
+  112  systemctl enable docker
+  113  kubectl get nodes
+  114  kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+  115  kubectl get pods -n kube-system
+  116  kubectl get nodes
+  117  kubectl get pods -n kube-system
+  118  vim /etc/sysconfig/docker
+  119  kubectl get pods -n kube-system
+  120  kubectl describe pod kube-flannel-ds-amd64-2dqlf -n kube-system
+  121  kubectl describe pod kube-flannel-ds-amd64-cxdlg -n kube-system
+  122  docker load -i flannel.tar
+  123  kubectl get pods -n kube-system
+  124  sudo docker pull jmgao1983/flannel:v0.11.0-amd64
+  125  docker images
+  126  ls
+  127  sudo docker tag jmgao1983/flannel:v0.11.0-amd64 quay.io/coreos/flannel:v0.11.0-amd64
+  128  kubectl apply -f ./kube-flannel.yml
+  129  ls
+  130  kubectl get pods -n kube-system
+  131  kubectl get nodes
+  132  netstat -natup
+  133  kubectl get nodes
+  134  cd /etc/yum.repos.d/
+  135  ls
+  136  scp kube.repo node21:/etc/yum.repos.d/
+  137  scp kube.repo node22:/etc/yum.repos.d/
+  138  scp kube.repo node23:/etc/yum.repos.d/
+  139  history
+
+
+
+
+[root@node21 ~]# history
+    1  history -w
+    2  history -w
+    3  halt -p
+    4  ifconfig 
+    5  eip 21
+    6  hostnamectl set-hostname node21
+    7  reboot
+    8  ifconfig
+    9  systemctl restart chronyd
+   10  systemctl enable chronyd
+   11  chronyc sources -v
+   12  vim /etc/hosts
+   13  cd /etc/yum.repos.d/
+   14  ls
+   15  wget -O /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+   16  ls
+   17  yum -y install epel-release
+   18  rm -rf local.repo 
+   19  yum -y install docker-ce
+   20  systemctl daemon-reload && systemctl start docker 
+   21  systemctl enable docker
+   22  yum clean all
+   23  yum repolist
+   24  yum -y install kubelet kubeadm
+   25  systemctl enable docker
+   26  docker image list
+   27  docker pull mirrorgooglecontainers/pause:3.1
+   28  docker tag docker.io/mirrorgooglecontainers/pause:3.1 k8s.gcr.io/pause:3.1
+   29  docker image list
+   30  sudo docker pull jmgao1983/flannel:v0.11.0-amd64
+   31  sudo docker tag jmgao1983/flannel:v0.11.0-amd64 quay.io/coreos/flannel:v0.11.0-amd64
+   32  docker image list
+   33  docker pull gcr.azk8s.cn/google_containers/kube-proxy:v1.17.0
+   34  docker tag gcr.azk8s.cn/google_containers/kube-proxy:v1.17.0 k8s.gcr.io/kube-proxy:v1.17.0
+   35  kubeadm join 192.168.1.20:6443 --token e1vlp8.l345m8xeyjj968sd     --discovery-token-ca-cert-hash sha256:e0a0a64f3771cd48aa713e29ee57ff771eabdff47a4e289f275176c5eee3a217
+   36  history
+   37  ping www.baidu.com
+   38  docker images
+   39  docker save quay.io/coreos/flannel:v0.11.0-amd64  -o fla.tar
+   40  ls
+   41  scp fla.tar node22:/root/
+   42  scp fla.tar node23:/root/
+   43  history
+   44  docker images 
+   45  docker save k8s.gcr.io/pause:3.1 -o pa.tar
+   46  scp pa.tar node23:/root/
+   47  scp pa.tar node22:/root/
+   48  history
+[root@node21 ~]# 
+
+
+
+
+[root@node22 yum.repos.d]# history
+    1  history -w
+    2  history -w
+    3  halt -p
+    4  ifconfig 
+    5  cd /etc/yum.repos.d/
+    6  ls
+    7  rm -rf local.repo 
+    8  yum -y install docker-ce
+    9  systemctl daemon-reload && systemctl start docker
+   10  systemctl enable docker
+   11  yum -y install kubelet kubeadm
+   12  docker pull mirrorgooglecontainers/pause:3.1
+   13  docker tag docker.io/mirrorgooglecontainers/pause:3.1 k8s.gcr.io/pause:3.1
+   14  sudo docker pull jmgao1983/flannel:v0.11.0-amd64
+   15  sudo docker tag jmgao1983/flannel:v0.11.0-amd64 quay.io/coreos/flannel:v0.11.0-amd64
+   16  docker pull gcr.azk8s.cn/google_containers/kube-proxy:v1.17.0
+   17  docker tag gcr.azk8s.cn/google_containers/kube-proxy:v1.17.0 k8s.gcr.io/kube-proxy:v1.17.0
+   18  kubeadm join 192.168.1.20:6443 --token e1vlp8.l345m8xeyjj968sd     --discovery-token-ca-cert-hash sha256:e0a0a64f3771cd48aa713e29ee57ff771eabdff47a4e289f275176c5eee3a217
+   19  ls
+   20  scp /etc/hosts root@192.168.1.23:/etc/hosts
+   21  scp *.repo root@192.168.1.23:/etc/yum.repos.d/
+   22  history
+

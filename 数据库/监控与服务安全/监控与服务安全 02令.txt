@@ -1,0 +1,386 @@
+2019.11.25　监控与服务安全　第二天　
+
+
+一.Zabbix报警机制
+
+.概念介绍
+
+.自定义的监控项默认不会自动报警
+.首页也不会提示错误
+.需要配置触发器与报警动作才可以自动报警
+
+  
+
+
+.触发器(trigger)
+
+--表达式,如果内存不足300M,用户超过30个等
+--当触发条件发生后,会导致一个触发事件
+--触发事件会执行某一个动作
+
+
+.动作
+  --触发器的条件被触发后的行为
+  --可以发邮件,也可以启动某个服务等.  
+
+(发邮件,发短信,发即时消息)
+
+  2.1.配置报警触发器
+-------------------------------------------------------------------------------------------------------------------------------------   
+    配置触发器步骤     |  找到对应的模板,点击触发器,点击新建触发器   
+                        | 自定义名称--->添加表达式 --选择对应的应用集,设置触发的条件
+--------------------------------------------------------------------------------------------------------------------------------------
+  .触发器表达式: Expression 表达式: 触发异常的条件
+ {<server>:<key>.<function>(<parameter>)} <Operation> <constant>
+  {主机:key.函数(参数)}<表达式>常数
+
+   --触发器表达式 
+
+  ..Expression表达式案例
+  {web1:system.cup.load[all,avg1].last(0)}>5 //0为最新数据
+ 如果web1主机最新的CPU平均负载大于5 ,则触发器状态为Problem
+ 
+   {vfs.fs.size[/,free].max(5m)}<10G
+  跟分区,最近5分钟的最大容量小于10G,则状态进入Problem
+ 
+   {vfs.file.cksum[/etc/passwd].diff(0)}>0
+最新一次校验/etc/passwd如果与上一次有变化,则状态进入Problem
+
+    ---大多数函数使用秒作为参数,使用#代表不同含义
+   --avg,count,last,min and max 函数支持额外的第二个参数time_shift(时间偏移量)
+    --这个参数允许从过去一段时间内引入函数.
+     
+    函数内容              描述
+   sum(600)         600秒内所有值的总和
+   sum(#5)          最后5个值的总和
+   last(20)         最后20秒的值
+   last(#5)         到数第5个值
+   avg(1h,1d)       一天前的1小时的平均值
+
+ 
+ 
+
+2.2.报警动作
+      名称-->具体操作
+    1.准备一台邮件服务器.
+=====================================================
+邮件服务器准备
+[root@host5 html]# yum -y install postfix;systemctl start postfix
+[root@host5 html]# netstat  -natup | grep :25
+tcp        0      0 127.0.0.1:25            0.0.0.0:*               LISTEN 
+
+[root@host5 html]# echo "127.0.0.1 host5" >> /etc/hosts
+root@localhost  :root的邮箱  .用root 给zabbix发邮件
+[root@host5 html]# yum -y install mailx  //发邮件的命令  .为发送邮件准备
+  [root@host5 html]# mail -s "xxx" zabbix < /etc/hosts  邮件名xxx 内容/etc/hosts
+
+
+[root@host5 html]# su - zabbix
+[zabbix@host5 ~]$ mail
+Heirloom Mail version 12.5 7/5/10.  Type ? for help.
+"/var/spool/mail/zabbix": 1 message 1 new
+>N  1 root                  Mon Nov 25 09:51  20/742   "xxx"
+& 1
+Message  1:
+
+=======================================================
+    2.登入管理界面,做如下设置.
+-----------------------------------------------------------------------------------------------------------------------------------
+   a.设置邮件服务器,指定发件邮件人.
+   
+     配置步骤   | 首页 管理-->报警媒介类型-->点击Email  -->SMTP服务器 设置为localhost 本机服务器.  --->SMTP电邮 (发送人) root@localhost  -->点击更新
+
+    b.指定收邮件人
+    管理 --> 用户-->选adinm  --->报警媒介 --->添加    类型不变,收邮件人添加 zabbix@localhost 
+
+    c.)创建动作.act1
+
+    配置 -->动作-->添加动作-->新的触发条件添加  动作-->操作-->新操作发送用户指定Zabbix.  
+   
+ 操作细节 步骤   1- 0  (0~无穷大)
+          步骤时长 60
+           操作类型 : 发送信息
+           发送到用户 (添加) Admin(Zabbix Administrator)
+           仅发送到 [Email]
+
+-------------------------------------------------------------------------------------------------------------------------------------
+   4) 触发器被触发看Zabbix是否收到邮件.
+
+
+二.Zabbix进阶操作
+
+  2.1 自动发现    (只负责发现.如果需要监控得部署.监控客户端)
+             自动发现介绍?
+           --当Zabbix需要监控设备越来越多,手动添加监控设置越来越有挑战,这时,考虑使用自动发现功能
+
+    2.2自动实现可以实现.
+      --发现主机,添加主机,添加主机到组,连接模板等.
+      会自动搜索IP范围内,如果有达到条件会把相应的服务器添加仅主机管理.
+  
+  A..自动创建发现规则
+        ..名称     ..条件
+
+   B..创建动作
+       名称. 触发条件.具体操作
+ ------------------------------------------------------------------------------------------------------------------------------  
+配置-->自动发现 -->点击右侧上面创建自动发现规则 -->设置名称 ,
+
+  ip范围: 发现设置的范围  192.168.0.1-254
+   检查 点击新的 可以选择  -->检查类型  端口范围  添加 --->在添加.
+------------------------------------------------------------------------------------------------------------------------------
+    
+  2.3主被动监控
+       zabbix服务器的监控模式分为:主动监控和被动监控(默认)
+             
+  .. 默认zabbix采用的是被动监控
+  --被动监控:Server向Agent发起连接,发送监控key,Agent接受请求,相应监控数据.
+
+  --主动监控:Agent向Server发起连接,Agent请求需要检测项目列表,Server响应Agent发送一个items列表,Agent确认收到监控列表,TCP连接完成,会话关闭,Agent开始周期性地收集数据.
+
+  区别
+  --Server不用每次需要数据连接Agent,Agent会自己收集数据并处理数据,Server仅需要保存数据即可.
+
+ .当监控主机达到一定量级后,Zabbix服务器会越来越慢
+ .此时.可以考虑使用主动监控,释放服务器的压力
+ .另外,Zabbix也支持分布式监控,也可以考虑的方案
+
+
+
+----------------------------------------------------------------------------------------------------------------------------
+案例一 配置主动监控服务器 服务器201  (只有进程,没有端口)
+
+A..配置被监控服务器201设置为主动模式
+
+a)安装zabbix配置文件
+
+[root@host201 ]#yum -y install pcre-devel gcc
+[root@host201 ]# tar -xf zabbix-3.4.4.tar.gz 
+[root@host201 zabbix-3.4.4]#  cd zabbix-3.4.4/
+[root@host201zabbix-3.4.4]#  ./configure --enable-agent
+[root@host201 zabbix-3.4.4]#  make install
+[root@host201 zabbix-3.4.4]# ls /usr/local/etc
+zabbix_agentd.conf  zabbix_agentd.conf.d
+[root@host201 zabbix-3.4.4]# ls /usr/local/bin
+eip  setip  zabbix_get  zabbix_sender
+[root@host1000 zabbix-3.4.4]# ls /usr/local/sbin
+zabbix_agentd
+b)配置主配置文件其以主动模式运行.
+[root@host201 zabbix-3.4.4]# vim /usr/local/etc/zabbix_agentd.conf
+ 93 #Server=127.0.0.1  //注释该行,不需要监控服务器访问该服务器
+118 StartAgents=0   //禁止被动监控(有主动服务进程去访问监控服务器,不需要10050端口)
+ServerActive=192.168.2.5  //指定监控服务器IP,一定取消127.0.0.1
+Hostname=web201        //告诉监控服务器,是谁发的数据信息,一定要和服务器配置监控服务器名称一致.
+RefreshActiveChecks=120 //默认120秒测试一次.
+
+c)启动服务器
+[root@host201 zabbix-3.4.4]# useradd zabbix
+[root@host201 zabbix-3.4.4]# zabbix_agentd    //启动服务
+d)查看进程
+tar -xf zabbix-3.4.4.tar.gz 
+   57  cd zabbix-3.4.4/
+./configure --enable-agent
+   59  make install
+   60  ls /usr/local/etc/
+   61  ls /usr/local/bin
+   62  ls /usr/local/sbin
+   63  vim /usr/local/etc/zabbix_agentd.conf
+   64  useradd zabbix
+   65  zabbix_agentd
+   66  ps -C zabbix_agentd
+
+[root@host201 zabbix-3.4.4]# ps -C zabbix_agentd   //查看服务器进程
+  PID TTY          TIME CMD
+ 8781 ?        00:00:00 zabbix_agentd
+ 8782 ?        00:00:00 zabbix_agentd
+ 8783 ?        00:00:00 zabbix_agentd
+
+---------------------------------------------
+B..监控服务器2.5设置为主动模式( 默认都是被动的.)
+
+ a)克隆模板 : 名称ATMP3
+  b)修改ATMP3模板里,监控项的模式为主动.
+  c)添加监控主机
+  d ) 选择监控主机
+  e)  查看监控数据
+
+---------------------------------------------------------------
+
+a)克隆模板 : 名称ATMP3
+  配置 --> 模板-->选择点击Template OS Linux --> 创建新一个模板,新命名 ATMP3
+点击下方全克隆 
+
+  b)修改ATMP3模板里,监控项的模式为主动.
+配置-->选择新克隆的模板ATMP3,点击后面的Items(监控项) -->点击全选,点击批量更新
+-->将类型修改为:Zabbix Agent (Active 主动模式)
+ ..批量修改监控项的监控模式后,并非所有的监控项目都支持主动模式
+  --批量修改后,会发现有几个没有修改主动模式成功
+  --说明,这些监控项目不支持主动模式,关闭即可
+  --可以点击类型排序,方便操作.点击状态即可关闭.
+
+  c)添加监控主机
+.在Zabbix监控服务器,添加被监控的主机(主动模式)
+
+配置-->主机-->创建主机-->主机名称 web201 (( //  必须与被监控主动监控201服务器上配置文件Hostname一致) ,将主机添加到Linux serves组
+
+-->ip地址为 0.0.0.0 ,端口 0 //不填写IP无法创建成功
+
+..为主机web201添加监控模板
+
+ --选择刚刚创建的模板(主动模式) ATMP3
+ --添加链接模板到主机
+
+  d ) 选择监控主机
+  e)  查看监控数据
+==================================================
+
+
+
+ 2.4拓扑图与聚合图形
+
+2.4.1 拓扑图 : zabbix的web
+
+检测中-->拓扑图->创建拓扑图   编辑拓扑图
+--选择默认的Local network 拓扑图,编辑即可
+
+.操作说明
+
+ --Icon(图标),添加新的设备后,可以点击图标修改属性
+ --Shape(形状)
+ --Lin
+
+
+2.5聚合图形: 在1张网页显示多台主机的数据
+
+检测中-->聚合图形-->创建新的聚合图形   (列数和行  多少图形  2行2列 一个网页四个主服务器展示)
+===在每一个更改把,监控对象加入进去.
+
+
+
+
+三.监控案例
+利用一个脚本,把nginx的状态信息 ,在zabbix监控服务器上获取并展示.
+
+
+   3.1 监控nginx服务
+
+A..编写nginx程序
+
+[root@host200 nginx-1.12.2]# curl http://192.168.2.200/status
+Active connections: 1     //当前连接数.
+server accepts handled requests
+ 4 4 1    (历史累计连接数量4 )  处理连接数量4 处理请求的数量 1 
+Reading: 0 Writing: 1 Waiting: 0 
+ 客户端来访问的个数    网站给客户端回数据   有多少客户端等待网站会信息
+
+vim /usr/local/bin/nginx_status.sh
+#!bin/bash
+case $1 in
+"Active")
+curl -s http://192.168.2.200/status | awk 'NR==1{print $3}' ;;  获取当前连接数
+ "requests")
+     curl -s http://192.168.2.200/status | awk 'NR==3{print $1}';; 获取历史累计数
+
+"Waiting" ) curl -s http://192.168.2.200/status | awk 'NR==4{print $6}' ;;
+     
+esac
+wq
+
+
+[root@host200 nginx-1.12.2]# chmod +x /usr/local/bin/nginx_status.sh
+[root@host200 nginx-1.12.2]# /usr/local/bin/nginx_status.sh Active
+1
+
+
+在200服务器上配置nginx服务器并加载status模块.. with-http_stub_module
+     [root@host200 nginx-1.12.2]# vim /usr/local/nginx/conf/nginx.conf
+server {
+        listen       80;
+        server_name  localhost;
+
+       location /status {
+                       stub_status on ;
+         }
+
+[root@host200 nginx-1.12.2]# curl http://192.168.2.200/status
+Active connections: 1     //当前连接数.
+server accepts handled requests
+ 4 4 1    (历史累计连接数量4 )  处理连接数量4 处理请求的数量 1 
+Reading: 0 Writing: 1 Waiting: 0 
+ 客户端来访问的个数    网站给客户端回数据   有多少客户端等待网站会信息
+
+B..把200服务器自定义命令
+[root@host200 zabbix-3.4.4]# vim /usr/local/etc/zabbix_agentd.conf
+UnsafeUserParameters=1   //允许自定义命令key
+Include=/usr/local/etc/zabbix_agentd.conf.d/*.conf  //定义自定义存放配置文件目录
+
+wq
+
+[root@host200 etc]# cd zabbix_agentd.conf.d/
+[root@host200 zabbix_agentd.conf.d]# vim x.conf  //编写自定义命令.查询服务上用户
+UserParameter= nginx_status[*],/usr/local/bin/nginx_status.sh $1 -9   
+
+//* 代表客户端任意输入的参数 ,$1代表可以在前段输入的值 ,赋值给
+
+// UserParameter = 自定义名字,自定义命令
+
+[root@host200 zabbix_agentd.conf.d]# killall  -9 zabbix_agentd
+[root@host200 zabbix_agentd.conf.d]# killall  -9 zabbix_agentd
+zabbix_agentd: no process found
+[root@host100 zabbix_agentd.conf.d]# zabbix_agentd
+
+[root@host200 zabbix_agentd.conf.d]# zabbix_get -s 127.0.0.1 -k nginx_status[requests]    //测试自定义的命令是否有效.
+46
+
+
+登入服务器管理做如下配置:
+      a)创建新监控模板 ATMP5
+       b)创建应用集  yyj5
+        c)监控监控项  
+                  名称    命令
+           ACtive , requests ,waiting 三个命令 得设置三个监控项
+
+                ** 监控项键值nginx_status[requests] ,
+                ** 监控项键值nginx_status[Active]
+                ** 监控项键值nginx_status[Waiting]
+        d)使用新模板ATMP5监控主机200
+
+          e)查看监控数据
+
+
+   3.2 监控tcp 状态
+
+     TCP 标记  SYN  ACK FIN
+vim /usr/local/bin/tcp_status.sh
+
+#!/bin/bash
+
+case $1 in
+
+estab)
+     ss -antp | awk 'BEGIN{x=0} /^ESTAB/{x++}END{print x}';;
+close_wait)
+     ss -antp | awk 'BEGIN{x=0} /^CLOSE-WAIT/{x++}END{print x}';;
+time_wait)
+     ss -antp | awk 'BEGIN{x=0} /^TIME-WAIT/{x++}END{print x}';;
+esac
+~                                                                               
+[root@host200 etc]# cd zabbix_agentd.conf.d/
+[root@host200 zabbix_agentd.conf.d]# vim x.conf  //编写自定义命令.查询服务上用户
+UserParameter= nginx_status[*],/usr/local/bin/nginx_status.sh $1 
+UserParameter= tcp_status[*],/usr/local/bin/tcp_status.sh $1
+
+//* 代表客户端任意输入的参数 ,$1代表可以在前段输入的值 ,赋值给
+
+// UserParameter = 自定义名字,自定义命令
+
+[root@host200 zabbix_agentd.conf.d]# killall  -9 zabbix_agentd
+[root@host200 zabbix_agentd.conf.d]# killall  -9 zabbix_agentd
+zabbix_agentd: no process found
+[root@host100 zabbix_agentd.conf.d]# zabbix_agentd
+
+[root@host200 zabbix_agentd.conf.d]# zabbix_get -s 127.0.0.1 -k tcp_status[estab]          
+3
+
+
+   3.3 其它监控
+

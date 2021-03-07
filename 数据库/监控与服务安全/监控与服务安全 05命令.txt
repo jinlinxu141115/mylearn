@@ -1,0 +1,425 @@
+2019.11.29　监控与服务安全　第5天　
+
+一.系统审计
+
+
+
+审计的案例
+
+.监控文件访问
+.监控系统调用,启动哪个服务器,调用那个命令,都有对应程序执行.
+.记录用户运行的命令
+.审计可以监控网络访问行为.
+.ausearch工具,可以根据条件过滤审计日志
+.aureport工具 , 可以生成审计报告
+
+1.1 部署audit   // auditd 这个服务器不允许停止
+   .使用审计系统需要安装audit软件包
+  .主配置文件为/etc/audit/auditd.conf
+   .日志文件: log_file=/var/log/audit/audit.log
+
+1.2定义临时规则  (可以马上生效,服务器停机,所有审计规则都没有)
+ ..定义文件系统规则,语法如下
+ --auditctl -w  path  -p permission -k key_name
+  --path为需要审计的文件或者目录
+   --权限可以是r,w,x,a(文件或目录的属性发生变化)
+   --Key_name可选项,方便识别哪些规则生成特定的日志项
+[root@host50 ~]# auditctl -w /etc/selinux -p wa -k selinux_change
+1.3定义永久规则
+.定义永久规则
+.写入配置文件/etc/audit/rules.d/audit.rules
+ 
+ 审计日志
+-------------------------------------------------------------------------
+查看日志
+[root@host50 ~]# tailf /var/log/audit/audit.log
+type=USER_AUTH msg=audit(1575007287.733:54): pid=1537 uid=0 auid=4294967295 ses=4294967295 msg='op=success acct="root" exe="/usr/sbin/sshd" hostname=? addr=192.168.4.254 terminal=ssh res=success'
+
+.type为类型 
+.msg为(time_stamp:ID),时间是date+%s
+.arch=c000003e,代表x86_64(16进制)
+.success=yes/no , 事件是否成功
+.a0-a3 是
+
+
+[root@host50 ~]# ausearch -k rm_partition //查看日志
+
+[root@host50 ~]# aureport  //生成审计报告
+
+Summary Report
+======================
+Range of time in logs: 2019年11月29日 11:36:41.166 - 2019年11月29日 14:01:27.783
+Selected time for report: 2019年11月29日 11:36:41 - 2019年11月29日 14:01:27.783
+Number of changes in configuration: 6
+Number of changes to accounts, groups, or roles: 3
+Number of logins: 1
+
+
+二.服务安全
+
+  Nginx安全优化
+
+   A..\安装时,选择最小安装.不需要的模块选择不安装.
+   B..\ 修改版本信息
+     ..修改版本信息(修改源码)
+    ..隐藏版本号信息(server_tokens off)
+[root@host50 nginx-1.12.2]# ./configure --help | grep -i with /查看哪些模块开通
+[student@room9pc01 ~]$ curl -I http://192.168.4.50/game/  //选项+I 查看网站服务器版本号
+
+HTTP/1.1 200 OK
+Server: nginx/1.12.2
+Date: Fri, 29 Nov 2019 06:48:43 GMT
+
+     autoindex on; 自动索引,让客户端访问一个文件夹下的,可以查看下面的所有网页,并可以查看网页代码.安装时候,必须不加载这个模块--without-http_autoindex_module
+      
+     C.限制并发:
+http {
+    
+     limit_req_zone $binary_remote_addr zone=one:10m rate=1r/s;
+
+server {
+           limit_req zone=one burst=5;
+          }
+
+定义内存大小.配置项.定义10m内存空间取名叫one 存放客户端ip地址.同一秒只处理一个请求,多余请求放在名称one内存里.放多少个,放5个,其它多余的不处理  /
+
+
+
+      D.拒绝非法请求
+
+
+        F.防止buffer溢出
+.防止客户端请求数据溢出.
+.有效降低机器Dos攻击风险.
+
+限制内存存放网页信息和httpd协议的空间大小
+
+ body  :网站的页面称为body.
+ httpd协议携带访问信息,先存在电脑内存 : header_buffer
+
+http{
+       client_body_buffer_size 1k;  //默认大小
+         client_header_buffer_size 1k;
+           client_max_body_size 16k;  //最大存储量
+            large_client_header_buffers 4 4k;
+}
+
+
+数据库安全
+针对mariadb的
+
+   A..初始化安全脚本
+  .输入旧密码,配置新root密码
+  .Remove anonymous users (删除诺名)
+
+
+     B..历史记录
+
+         家目录下面:
+  [root@host50 http]# ls -a ~
+.mysql_history        //数据库里的 全部操作. 如果设置密码
+.bash_history     //linux所有历史操作
+
+        C.数据服务器访问,返回给客户的数据,是明文.没有进行加密.  存在安全隐患          
+
+
+[root@host50 http]# tcpdump -i eth0 -A  src or dst port 3306  //抓取客户访问服务器数据库.能看到返回客户的数据.
+17:29:48.511988 IP host50.mysql > 192.168.4.52.53222: Flags [P.], seq 316:410, ack 169, win 227, options [nop,nop,TS val 30014498 ecr 30007837], length 94
+E.....@........2...4.....5...J.G.....;.....
+...".........)....def.db1.user.user.name.name.!.................."......tom.....jim.....wlian.......".
+
+
+
+Tomcat优化:
+
+3种访问方式:
+  
+A.. [root@host50 ~]# curl -I http://localhost:8080/test.html
+HTTP/1.1 200 OK
+Server: Apache-Coyote/1.1 //软件名            //获取ip包,数据报头信息
+B...[root@host50 ~]# curl http://localhost:8080/t.html
+<!DOCTYPE html><html><head><title>Apache Tomcat/8.0.30 - 
+
+C..[root@host50 ~]# curl -I http://localhost:8080
+HTTP/1.1 200 OK
+Server: Apache-Coyote/1.1
+
+三.Linux安全之打补丁
+
+   50创建补丁.    51打补丁
+
+  补丁:新脚本文件和旧脚本文件的差异.
+
+diff 逐行比较
+
+. diff原理是:
+      --告诉我们怎么修改一个文件后
+     -u   输出统一
+1.1.. 给文件创建补丁文件.
+
+
+1.2 .. 给目录创建补丁文件.
+
+
+
+
+
+
+
+-----------------------------------------------------------------------------------------------------------------------
+案例一 部署审计audit
+
+[root@host50 ~]# yum -y install audit
+[root@host50 ~]# systemctl start auditd
+[root@host50 ~]# systemctl enable auditd
+[root@host50 ~]# auditctl -s
+enabled 1
+failure 1
+pid 1366
+rate_limit 0
+backlog_limit 8192
+lost 0
+backlog 0
+[root@host50 ~]# auditctl -l
+No rules
+
+
+[root@host50 ~]# auditctl -w /etc/passwd -p wa -k passwd_change
+//设置规则所有对passwd文件的写,属性修改操作都会被审计日志记录
+[root@host50 ~]# auditctl -l
+-w /etc/passwd -p wa -k passwd_change
+
+[root@host50 ~]# auditctl -w /etc/selinux -p wa -k selinux_change
+//配置规则,监控/etc/selinux目录
+[root@host50 ~]# auditctl -l
+-w /etc/passwd -p wa -k passwd_change
+-w /etc/selinux -p wa -k selinux_change
+
+[root@host50 ~]# auditctl -w /usr/bin/rm -p x -k rm_partition
+[root@host50 ~]# auditctl -l
+-w /etc/passwd -p wa -k passwd_change
+-w /etc/selinux -p wa -k selinux_change
+-w /usr/bin/rm -p x -k rm_partition
+
+[root@host50 ~]# rm -rf a.txt  //操作违规的删除规则
+[root@host50 ~]# useradd dc     //增加用户dc,违规 passwd_change
+
+[root@host50 ~]# ausearch -k rm_partition //查看日志
+type=SYSCALL msg=audit(1574999682.010:10): arch=c000003e syscall=59 success=yes(执行命令是否成功) exit=0 a0=1e11a20 a1=1d8f3f0 a2=1d1d020 a3=7ffeeb3ba7a0 items=2 ppid=854 pid=1481 auid=0 uid(谁执行的命令)=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=pts0 ses=1 comm="rm" exe="/usr/bin/rm"  (支持的命令) key="rm_partition"
+
+------------------------------------------------------------------------------------------------------------
+案例二 ,Nginx安全
+
+ [root@host50 ~]#./configure --without-http_autoindex_module --without-http_ssi_module
+
+autoindex on; 启动自动索引,客户端访问一个文件夹下时,可以查看在这文件夹下面的所有网页,并可以查看网页代码.存在安全隐患. 所有在安装编译时候,不安装时候,必须不加载这个模块--without-http_autoindex_module
+
+[root@host50 ~]# make && make install
+[root@host50 ~]# /usr/local/nginx/sbin/nginx 
+
+
+
+
+
+
+
+
+案例三,Nginx修改版本号.版本信息
+
+
+[student@room9pc01 ~]$ curl -I http://192.168.4.50/game/  //选项+I 查看网站服务器版本号
+
+HTTP/1.1 200 OK
+Server: nginx/1.12.2
+Date: Fri, 29 Nov 2019 06:48:43 GM
+
+
+[root@host50 nginx-1.12.2]# /usr/local/nginx/sbin/nginx  -v
+nginx version: nginx/1.12.2
+
+
+修改后
+
+[root@host50 nginx-1.12.2]#/root/nginx-1.12.2/src/http
+[root@host50 nginx-1.12.2]# vim +48 ngx_http_header_filter_module.c
+
+static u_char ngx_http_server_string[] = "Server:dc " CRLF;
+static u_char ngx_http_server_full_string[] = "Server:dc "  CRLF;
+static u_char ngx_http_server_build_string[] = "Server:dc "  CRLF;
+
+wq
+
+[root@host50 nginx-1.12.2]./configure --without-http_autoindex_module 
+[root@host50 nginx-1.12.2]  make && make install
+[root@host50 nginx-1.12.2] /usr/local/nginx/sbin/ngin
+
+客户端访问验证
+[student@room9pc01 ~]$ curl -I http://192.168.4.50/game/
+HTTP/1.1 200 OK
+Server:dc 
+Date: Fri, 29 Nov 2019 07:19:50 GMT
+Content-Type: text/html
+Content-Length: 4
+Last-Modified: Fri, 29 Nov 2019 06:39:00 GMT
+Connection: keep-alive
+ETag: "5de0bd04-4"
+Accept-Ranges: bytes
+=================================================
+案例四  限制并发量
+
+
+定义内存大小.配置项.定义10m内存空间取名叫one 存放客户端ip地址.同一秒只处理一个请求,多余请求放在名称one内存里.放多少个,放5个,其它多余的不处理  //限制并发.通过ngx_http_req_module模块进行实现.
+[root@host50 http]# /usr/local/nginx/sbin/nginx  -s stop 
+[root@host50 http]# vim /usr/local/nginx/conf/nginx.conf
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+     limit_req_zone $binary_remote_addr zone=one:10m rate=1r/s;
+
+server {
+           limit_req zone=one burst=5;
+          }
+
+
+}
+wq
+[root@host50 http]# /usr/local/nginx/sbin/nginx
+
+
+客户端进行验证:
+
+[student@room9pc01 ~]$ ab -c 100 -n 100 http://192.168.4.50/game/
+This is ApacheBench, Version 2.3 <$Revision: 1430300 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+
+Server Software:        c
+Server Hostname:        192.168.4.50
+Server Port:            80
+
+Document Path:          /game/
+Document Length:        4 bytes
+
+Concurrency Level:      100
+Time taken for tests:   5.002 seconds
+Complete requests:      100
+Failed requests:        94             //验证 94个ping包丢失,失败
+   (Connect: 0, Receive: 0, Length: 94, Exceptions: 0)
+Write errors:           0
+Non-2xx responses:      94
+
+===============================================
+
+拒绝非法请求
+
+
+[student@room9pc01 ~]$ curl -i -X HEAD http://192.168.4.50/game/
+HTTP/1.1 200 OK
+Server:dc 
+Date: Fri, 29 Nov 2019 07:54:47 GMT
+Content-Type: text/html
+Content-Length: 4
+Last-Modified: Fri, 29 Nov 2019 06:39:00 GMT
+Connection: keep-alive
+ETag: "5de0bd04-4"
+Accept-Ranges: bytes
+
+
+
+//进行修改配置项,优化,拒绝非法请求
+
+[root@host50 http]# vim /usr/local/nginx/conf/nginx.conf
+
+
+server {
+          if ($request_method !~ ^(GET|POST)$ )  {
+            return 444;
+       }  //如果用户使用 非GET或者POST方法访问网站,则return 返回444的错误信息
+        
+wq
+
+[root@host50 http]# /usr/local/nginx/sbin/nginx 
+
+客户端访问验证
+[student@room9pc01 ~]$ fire -i -X HEAD http://192.168.4.50/game/
+curl: (52) Empty reply from server
+
+
+====================================
+案例 tomcat 版本隐藏
+
+
+[root@host50 util]#/usr/local/tomcat/lib/org/apache/catalina/util
+[root@host50 util]# vim ServerInfo.properties 
+server.info=DC^M          //默认网页
+server.number=7.7.30.0^M
+server.built=Dec 1 2015 22:30:46 UTC
+[root@host50 util]# cd /usr/local/tomcat/conf/
+[root@host50 conf]# vim +69 server.xml 
+                                                           
+ <Connector port="8080" protocol="HTTP/1.1"
+               connectionTimeout="20000"         //curl 命令行
+               redirectPort="8443" server="dc01"/>
+
+~        
+二,进程的启动利用普通用户
+
+[root@host50 conf]#useradd tomcat
+ [root@host50 conf]# chown -R tomcat:tomcat /usr/local/tomcat/
+ [root@host50 conf]#  su  - -c '/usr/local/tomcat/bin/startup.sh' tomcat //转换到tomcat用户 执行 启动tomcat
+ [root@host50 conf]#  ps -aux | grep -i java
+tomcat    2686  0.7  5.4 2864732 79400 ?       Sl 
+
+
+
+[root@host50 conf]# vim /etc/rc.local
+su  - -c '/usr/local/tomcat/bin/startup.sh' tomcat
+ 
+[root@host50 conf]# chmod +x /etc/rc.local 
+
+
+    --=-===================================
+
+创造目标补丁
+
+[root@host50 ~]# mkdir demo
+[root@host50 ~]# cd demo/
+[root@host50 demo]# mkdir source1
+[root@host50 demo]# mkdir source2
+[root@host50 demo]# echo "hello   world"   > source1/test.sh
+[root@host50 demo]# echo "hello the  world"   > source2/test.sh
+[root@host50 demo]# echo "xxxx"  > source2/tmp.txt
+[root@host50 demo]# which find
+/usr/bin/find
+[root@host50 demo]# cp /usr/bin/find source1/
+[root@host50 demo]# cp /usr/bin/find source2/
+[root@host50 demo]# echo 1 >> source2/find 
+
+[root@host50 ~]# scp /root/bd2.patch root@192.168.4.53:/opt/
+
+
+
+[root@host53 ~]# cat /opt/bd2.patch 
+diff -urNa /root/demo/source1/find /root/demo/source2/find
+--- /root/demo/source1/find	2019-11-30 10:50:10.761280024 +0800
++++ /root/demo/source2/find	2019-11-30 10:50:25.481280024 +0800
+
+
+[root@host53 socure1]# patch -p4 < /opt/bd2.patch 
+patching file find
+patching file test.sh
+patching file tmp.txt
+
+
+
+[root@host53 socure1]# patch -RE <  /opt/bd2.patch 
+patching file find
+patching file test.sh
+patching file tmp.txt
+[root@host53 socure1]# ls
+find  test.sh
+[root@host53 socure1]# wc -l find 
+632 find
+
+                         

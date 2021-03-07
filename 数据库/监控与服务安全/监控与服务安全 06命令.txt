@@ -1,0 +1,271 @@
+2019.11.30　监控与服务安全　第六天　  iptables(软件防火墙服务)
+
+RHEL7 版本以下 防火墙      iptables
+RHEL7 版本以上 防火墙服务  firewalld
+firewall服务器调用的功能模块都是iptables
+
+
+一.防火墙服务器介绍.
+  一道保护性的安全屏障.保护,隔离的作用.架设在公网和私网中间.
+
+二.iptables防火墙服务的组成
+  4张表   (功能)
+   A..filter表:  数据包过滤功能
+   B..nat表:      地址转换
+   C..mangle表:   打标记
+   D..raw表  :    状态跟踪,不同状态是ip包进行跟踪.
+
+   5条链    (方式)
+   数据包传输的方向 : 
+   a. INPUT 进入防火墙的数据包
+   b. OUTPUt 从防火墙本机出去的数据包
+   c. FORWARD 经过防火墙的数据包 目标和源IP 都不是防火墙 (设置规则,考虑进和出两个方向)
+   d. PREROUTING 路由前处理 
+   f. POSTROUTING路由后处理
+
+   规则存放在链里. 链存放在表里, 表存在iptables服务里
+
+   规则-->链-->表--->iptables服务
+
+    包过滤匹配流程
+  ..规则链内的匹配顺序
+  
+   --顺序比对,匹配即停止(LOG除外)
+   --无任何规则,则安装该链的默认策略处理
+
+三.iptables命令格式 (查看,修改,删除,保存)
+
+]# iptables [-t  表名]  选项 [链名] [条件]  [-j 目标操作]
+
+ 常用的管理选项
+
+             -A  在链的末尾追加一条规则
+ 添加规则        -I  在链的开头(或指定序号) 插入一条规则
+                  
+ 查看规则          -L                列出所有的规则条目
+               -n               以数字形式显示地址 , 端口等信息
+               --line-numblers  查看规则时,显示规则的序号
+
+删除规则         -D 删除链内指定序号(或内容)的一条规则
+              -F 清空所有的规则
+
+
+默认策略           -P 为指定的链设置默认规则  (ACCEP | DROP )
+
+
+
+基本匹配[条件]
+                  
+                      协议匹配       -p  协议名
+通用匹配           地址匹配       -s 源地址    -d 目标地址
+                     接口匹配        -i 收数据的网卡      , -o 发数据的网卡
+
+                     端口匹配           --sport 源端口        --dport 目标端口
+ 
+                      ICMP类型匹配     --icmp-type  (请求echo-request,应答!--tcmp-request 或者 echo-reply)
+-j 目标操作
+   .ACCEPT  : 允许通行/放行
+   .DROP   : 直接丢弃,不给出任何回应
+   .REJECT : 拒绝通过,必要时会给出提示
+   .LOG : 记录日志,然后给下一条规则 (把信息包信息放在log日志.决定权给下一条规则定义)
+
+
+四.常用选项的使用  -L  -A -I -F -D -P  --line-numbers
+[root@hostc ~]# iptables -t nat -L   //查看设置的规则
+[root@hostc ~]# iptables -t filter -L
+[root@hostc ~]# iptables -t raw -L
+[root@hostc ~]# iptables -t mangle -L
+
+[root@hostc ~]# iptables -t filter -nL --line-numbers  //查看ip用数字表示,--line-numbers前面加行号表示
+
+[root@hostc ~]# iptables -t filter -F   //清空所有规则
+[root@hostc ~]# iptables -t nat -F
+[root@hostc ~]# iptables -t raw -F
+[root@hostc ~]# iptables -t mangle -F
+
+[root@hostc ~]# iptables-save > /etc/sysconfig/iptables //把当前防火墙信息保存放在//etc/sysconfig/iptabes ,防火墙每次开启会读取该文件信息.永久保存限制信息
+
+
+[root@hostc ~]# iptables -t filter -A INPUT -p icmp -j DROP  //设置ping包,都丢弃.主机也无法ping任何主机
+[root@hostc ~]# iptables -t filter -nL   --line-numbers
+Chain INPUT (policy ACCEPT)
+num  target     prot opt source               destination         
+1    DROP       icmp --  0.0.0.0/0            0.0.0.0/0           
+
+[root@hostc ~]# iptables -t filter -D INPUT 1  删除第第一条规则
+
+
+五.主机型防火墙 :服务运行后自己保护自己 filter  --->INPUT
+
+  254  ssh    root@192.168.4.80   hostc 安装httpd mariadb并起服务器
+
+[root@hostc ~]# iptables -t filter -A INPUT -p tcp --dport 22 -j ACCEPT //修改 远程22 端口进来 
+[root@hostc ~]# iptables -t filter -P INPUT DROP   //定义默认是 DROP
+[root@hostc ~]# iptables -t filter -nL INPUT
+Chain INPUT (policy DROP)
+target     prot opt source               destination         
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:22
+
+[root@hostc ~]# iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT//放行80端口
+
+[root@hostc ~]# tcpdump -i eth0 tcp port 3306  //主机抓包,3306端口,
+
+
+
+[root@hostc ~]# iptables -t filter -A INPUT -p tcp  --dport 3306 -s 192.168.2.0/24  -j ACCEPT        //放行数据3306端口.并且只能2网段
+[root@hostc ~]# iptables -t filter -nL INPUT
+Chain INPUT (policy DROP)
+target     prot opt source               destination         
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:22
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:80
+ACCEPT     tcp  --  192.168.2.0/24       0.0.0.0/0            tcp dpt:3306
+
+
+
+[root@hostc ~]# iptables -t filter -I INPUT -p icmp --icmp-type echo-reply -j ACCEPT              //设置本机可以ping 其它机器.其它主机无法ping通防火墙主机
+[root@hostc ~]# iptables -t filter -nL
+Chain INPUT (policy DROP)
+target     prot opt source               destination         
+ACCEPT     icmp --  0.0.0.0/0            0.0.0.0/0            icmptype 0
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:22
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:80
+ACCEPT     tcp  --  192.168.2.0/24       0.0.0.0/0            tcp dpt:3306
+
+六.网络型防火墙 : 控制数据是否经过本机  架设在内外网之间 filter   --->FORWARD
+
+[root@hostc ~]# sysctl -a | grep -i "net.ipv4.ip_forward" //查看内核路由是否开启
+net.ipv4.ip_forward = 1
+net.ipv4.ip_forward_use_pmtu = 0
+
+
+[root@hosta ~]# route add default gw 192.168.4.80  //临时设置网关
+[root@hosta ~]# route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         192.168.4.80    0.0.0.0         UG    0      0        0 eth0
+
+[root@hostb ~]# route add default gw 192.168.2.80
+[root@hostc ~]# tcpdump -i eth0 icmp //在主机 c查看 网络 经过 了
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
+17:37:08.952943 IP 192.168.4.22 > 192.168.2.33: ICMP echo request, id 1122, seq 1, length 64
+17:37:08.953090 IP 192.168.2.33 > 192.168.4.22: ICMP echo reply, id 1122, seq 1, length 64
+[root@hostc ~]# iptables -t filter -P FORWARD DROP
+[root@hostc ~]# iptables -t filter -nL
+Chain INPUT (policy DROP)
+target     prot opt source               destination         
+ACCEPT     icmp --  0.0.0.0/0            0.0.0.0/0            icmptype 0
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:22
+ACCEPT     tcp  --  0.0.0.nu0/0            0.0.0.0/0            tcp dpt:80
+ACCEPT     tcp  --  192.168.2.0/24       0.0.0.0/0            tcp dpt:3306
+
+Chain FORWARD (policy DROP)
+target     prot opt source               destination         
+
+ -
+[root@hostc ~]# iptables -t filter -A FORWARD -p icmp -j ACCEPT //允许ping通  
+[root@hostc ~]# iptables -t filter -nL FORWARD
+Chain FORWARD (policy DROP)
+target     prot opt source               destination         
+ACCEPT     icmp --  0.0.0.0/0            0.0.0.0/0     
+
+
+[root@hostc ~]# iptables -t filter -A FORWARD -p tcp -j ACCEPT //允许tcp访问请求  
+----------------------------------------------------------------------------------------------------------------------------------------
+
+客户机a 可以 ssh 远程   经过 路由器C 路由 连接到客户机b. 
+[root@hostc ~]# iptables -t filter -A FORWARD -p tcp --dport 22 -j ACCEPT
+[root@hostc ~]# iptables -t filter -A FORWARD -p tcp --sport 22 -j ACCEPT
+[root@hostc ~]# iptables -t filter -nL FORWARD 
+Chain FORWARD (policy DROP)
+target     prot opt source               destination         
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:80
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp spt:80
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:22
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp spt:22
+
+
+七.常见扩展匹配
+
+查询模块: iptables 模块 百度查询
+//使用模块,可以简短在iptables里设置次数.提高处理的速度.
+
+类别
+         MAC地址匹配  -m mac --mac-socurce   MAC地址
+
+扩展匹配   多端口匹配     -m multiport   --sports 源端口列表
+                     -m  multiport  --dports 目标端口列表 
+
+           IP范围匹配   -m iprange    --src-range  ip1-ip2
+                      -m iprange    --dst-range  ip1 -ip3
+
+
+利用多端口模块
+[root@hostc ~]# iptables -t filter -A FORWARD -p tcp -m multiport --dports 80,22,3306,6379  -j ACCEPT
+[root@hostc ~]# iptables -t filter -A FORWARD -p tcp -m multiport --sports 80,22,3306,6379  -j ACCEPT
+
+[root@hostc ~]# iptables -t filter -nL FORWARD  --line-numbers
+Chain FORWARD (policy DROP)
+num  target     prot opt source               destination         
+1    ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            multiport dports 80,22,3306,6379
+2    ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            multiport sports 80,22,3306,6379
+
+
+
+[root@hostc ~]# iptables -t filter -A FORWARD -p icmp -m iprange  --src-range 192.168.2.20-192.168.2.50 -j ACCEPT
+[root@hostc ~]# iptables -t filter -A FORWARD -p icmp -m iprange  --src-range 192.168.4.20-192.168.4.30 -j ACCEPT
+
+
+[root@hostc ~]# iptables -t filter -nL FORWARD  --line-numbersChain FORWARD (policy DROP)
+num  target     prot opt source               destination         
+1    ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            multiport dports 80,22,3306,6379
+2    ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            multiport sports 80,22,3306,6379
+3    ACCEPT     icmp --  0.0.0.0/0            0.0.0.0/0            source IP range 192.168.4.20-192.168.4.30
+4    ACCEPT     icmp --  0.0.0.0/0            0.0.0.0/0            source IP range 192.168.2.20-192.168.2.50
+
+
+--启动mac模块
+[root@hostc ~]# iptables -t filter -I FORWARD 3 -p icmp -m mac --mac-source 52:54:00:4b:24:62 -j DROP
+
+八.nat表的使用(共享一个公网ip 上网)
+      把私有ip地址转为公有地址
+  
+路由后 (已经确定下一跳)  POSTROUTING
+路由前 (帮忙选择下一跳)  PREROUTing
+
+[root@hostb ~]# route del default gw 192.168.2.80  //把服务器b 网关取消. 
+                                                
+[root@hostb ~]# route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+192.168.2.0     0.0.0.0         255.255.255.0   U     100    0        0 eth1
+
+
+[root@hostc ~]# iptables -t nat  -A POSTROUTING -s 192.168.4.0/24 -p tcp --dport 80 -j SNAT --to-source 192.168.2.80  //把4.22转换为公网 2.8网去访问B网站
+
+
+
+[root@hostc ~]# iptables -t nat  -nL POSTROUTING --line-numbers
+Chain POSTROUTING (policy ACCEPT)
+num  target     prot opt source               destination         
+1    SNAT       tcp  --  192.168.4.0/24       0.0.0.0/0            tcp dpt:80 to:192.168.2.80
+
+[root@hosta ~]# curl http://192.168.2.33/test.html
+123
+
+[root@hostb ~]# tail -f /etc/httpd/logs/access_log //在b服务器查看网页访问日志.是2.80地址来访问.
+192.168.2.80 - - [02/Dec/2019:10:47:50 +0800] "GET /test.html HTTP/1.1" 200 4 "-" "curl/7.29.0"
+
+//公网ip不确定时候,如下设置.
+[root@hostc ~]# iptables -t nat  -A POSTROUTING -s 192.168.4.0/24 -p tcp --dport 80 -o eth1 (公网接口的地址网卡) j MASQUERADE //当数据包源地址是4.0网段且是80端口,动态获取eth1端口ip地址是多少,就是多少. 
+[root@hostc ~]# iptables -t nat -nL POSTROUTING
+Chain POSTROUTING (policy ACCEPT)
+target     prot opt source               destination         
+MASQUERADE  tcp  --  192.168.4.0/24       0.0.0.0/0            tcp dpt:80
+
+----------------------------------------------------
+案例一,安装iptables
+[root@hostc ~]# yum -y install iptables-services
+[root@hostc ~]# systemctl start iptables
+
+

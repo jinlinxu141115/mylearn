@@ -1,0 +1,30 @@
+DBA1
+
+第一天
+
+01.如何修改Mysql的登录密码策略？要求设置密码为123456.
+vim /etc/my.cnf
+validate-password-policy=0
+validate-password-length=6
+alter user root @"locahost" identified by "123456";
+
+02.写出Mysql主配置文件路径，数据库目录路径，另外Mysql的默认端口号是多少，传输协议是哪一种？
+/var/lib/mysql
+端口号:3306
+传输协议:tcp
+
+03.常用的SQL操作指令的四个分类
+数据库定义
+DDL
+数据库操作
+DML
+(DCL)数据库控制
+DTL数据事物语言
+
+04.在DB1库下,创建一个表,名称为t5,要求字段有名字,性别(注:要求是枚举类型),爱好(注:要求是枚举类型),请写出命令行.
+create table t5(姓名 char(4),性别 enum('男','女'),爱号 set('足球','篮球','排球'))DEFAULT CHARSET=utf8;
+
+05.在上一题的表中添加一条记录,内容任意,请写出命令行.
+
+insert into t5 values("张三","男","足球,篮球");
+

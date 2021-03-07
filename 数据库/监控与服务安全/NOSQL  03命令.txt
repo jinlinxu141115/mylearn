@@ -1,0 +1,416 @@
+2019.11.22　NOSQL数据库管理　第三天　命令
+
+
+一.NoSqL 主从复制
+   
+   工作原理
+   --slave向master发送sync命令
+    --master启动后台存盘进程,并收集所有修改
+ 
+1.Redis主从复制
+  ..info replication 
+  临时 ..slaveof    主ip   主端口 //设置主从
+  临时..slaveof no one //取消从关系
+
+  永久配置: vim /etc/redis/6379.conf  主从复制
+      slaveof 主ip   主端口
+   :wq
+  
+
+2.配置带密码的主从服务器
+
+51主服务器配置--连接密码.重启
+  sed -n '501p'  /etc/redis/6379.conf
+   requirepass  123456
+
+52从服务器配置
+  --设置连接密码.启动服务
+
+  vim  +289 /etc/redis/6379.conf
+  masterauth 123456 
+
+
+
+3 .在命令行里. 保存到配置文件里  config rewrite
+
+192.168.4.53:6353> slaveof 192.168.4.51 6351
+OK
+192.168.4.53:6353> config rewrite   //把slaveof 临时命令设置保存到主配置文件永久生效.
+
+192.168.4.53:6353> config set masterauth 123456
+OK
+192.168.4.53:6353> config rewrite  //把上面密码,保存到6379.conf配置文件里
+
+
+
+
+
+
+4.哨兵服务 (实现Redis高可用) ,实现数据备份,和高可用
+  哨兵服务器介绍
+   --监视master服务器
+   --发现master宕机后,将从服务器升级为主服务器
+  --主配置文件 sentinel.conf
+  --配置模板 redis-4.0.8 /sentinel.conf
+
+
+          master 51           slave 52
+                         哨兵服务器57
+1.安装Redis源码软件 (不需要 初始启动)
+ 2.  vim /etc/sentinel.conf  //新创建主配置文件 ,参考 4.8Redis安装包/root/redis-4.0.8
+
+
+二.数据持久化 
+
+1.RDB方式 实现数据持久化 (数据永久存储) 全称 Redis DataBase  默认使用
+ --数据持久化方式一
+ --数据持久化默认方式
+--按照指定时间间隔,将内存中的数据集快照写入硬盘 (/var/lib/redis/6379/dump.rdb中,只要停止Redis服务,会自动把内存的数据保存到硬盘的dump.rdb中,不管是否到备份保存时间)
+--快照术语 Snapshot
+ --恢复时,将快照文件直接读入内存.
+
+
+在系统主配置文件6379.conf 有定义RDB文件名
+
+dbfilename dump.rdb            //文件名
+
+
+  1.2优化设置
+.数据从内存保存到硬盘的频率
+[root@host50 ~]# vim /etc/redis/6379.conf
+
+save 900 1         15分钟   且只有1个key改变
+save 300 10       在 300秒 内    且10个key改变  会保存
+save 60 10000      在 60秒  内,    且10000个变量改变,执行保存
+
+.手动存盘
+ --save           //阻塞写存盘   别人不能访问,数据
+--bgsave         //不阻塞写存盘  别人可以访问该数据
+
+
+.shutdown   //关服务器,数据字段存盘
+
+
+RDB优点与缺点
+
+.RDB优点
+  --高性能持久化实现--创建一个子进程来执行持久化,先将数据写入临时文件,持久化过程结束后,再用这个临时文件替换上次持久化的文件,过程中主进程不做任何IO操作(客户访问处理的操作)
+   --比较适合大规模数据恢复,且对数据完整性要求不是非常高的场合.
+
+ .RDB缺点
+   --意外宕机时,丢失最后一次持久化的所有数据.
+
+2.AOF方式 实现数据持久化.
+
+.Append Only File
+
+ --追加方式记录写操作的文件
+ --记录redis服务器所有操作
+--不断的将新的写操作,追加到文件的末尾
+--默认没有启用
+--使用cat命令可以查看文件内容
+
+登入redis数据库服务器,利用命令启用AOF 
+[root@host50 6379]# redis-cli -h 192.168.4.50 -p 6350 -a 123456
+   192.168.4.50:6350> config Set appendonly yes  //启用
+   192.168.4.50:6350> config  rewrite //写进配置
+[root@host50 6379]# ls
+appendonly.aof    //在Redis数据目录文件下,产生appendonly.aof文件
+
+优化配置 
+
+..AOF文件记录写操作的三种方式
+
+ 702 # appendfsync always  //时时记录.并完成磁盘同步
+ 703 appendfsync everysec  //每秒记录一次,并完成磁盘同步
+ 704 # appendfsync no        //写入aof  , 不执行磁盘同步
+
+
+ 744 auto-aof-rewrite-percentage 100  重写条件,是上一次重写的增长百分之百会在重写
+ 745 auto-aof-rewrite-min-size 64mb    首次重写触发值64M大小
+
+
+..修复AOF  文件
+  --把文件恢复到最后一次的正确操作
+[root@host50 6379]# redis-check-aof --fix appendonly.aof 
+0x              ad: Expected prefix '*', got: 'e'
+AOF analyzed: size=189, ok_up_to=173, diff=16
+This will shrink the AOF from 189 bytes, with 16 bytes, to 173 bytes
+Continue? [y/N]: y
+
+[root@host50 6379]# /etc/init.d/redis_6379 start
+/var/run/redis_6379.pid exists, process is already running or crashed
+[root@host50 6379]# rm -rf /var/run/redis_6379.pid
+[root@host50 6379]# /etc/init.d/redis_6379 start
+
+
+
+..AOF优点和缺点
+
+优点
+
+  --可以灵活设置持久化方式(三种,always , everysec , no)
+  --出现意外宕机时,仅可以丢失1秒的数据
+
+缺点
+   
+   --持久化文件的提交通常会大于RDB方式
+   --执行fsync策略时的速度可能会比RDB方式慢  (把aof里记录的命令在内存再执行一遍,相对速度会比较慢)
+
+
+3.数据类型  (字符类型,列表类型,hash类型,集合类型,有序集合)
+
+lnmp  php   --> redis (不同类型数据,对应不同的管理命令)
+
+
+
+3.1字符类型命令的使用
+
+.set  key values   [ex seconds] [px milliseconds]  [nx | xx]
+                       过期时间使用秒  或者 毫秒为单位
+nx 系统内存变量名不存在时,赋值.
+xx 系统内存变量名存在时,赋值
+
+.setrange key offset value
+  --从偏移量开始修改key的特定为的值
+
+192.168.4.50:6350> set first "hello world"
+192.168.4.50:6350> SETRANGE first 6 "Redis"
+192.168.4.50:6350> get first
+"hello Redis"
+
+.strlen key ,统计字串长度
+192.168.4.50:6350> strlen first
+(integer) 11
+
+.append key value
+  --存在追加,不存在在创建key及value,返回key长度
+192.168.4.50:6350> append myname jacob
+(integer) 5
+192.168.4.50:6350> get myname
+"jacob"
+
+192.168.4.50:6350> append first aa
+(integer) 13
+192.168.4.50:6350> get first
+"hello Redisaa"
+
+
+.setbit key offset value
+  --对key所有存储字串,设置或者清除特定偏移量上的位(bit)
+  --value值可以为1或者0,offset为0 ~ 2 ^32 之间
+  --key不存在,则创建新key
+
+192.168.4.50:6350> setbit bit 0 1
+192.168.4.50:6350> setbit bit 1 1
+192.168.4.50:6350> setbit bit 2 1
+192.168.4.50:6350> setbit bit 3 0
+
+.bitcount key
+   --统计字符串被设置为1的比特位数量
+192.168.4.50:6350> BITCOUNT bit
+(integer) 3
+
+场景说明:
+记录网站用户上线频率,如果a用户上线了多少天等类似的数据
+如果用户在某天上线,则使用setbit,以用户名为key,将网站上线如为offset,并在该offset
+上设置1,最后计算用户总上线数时,使用比特count用户名即可.这样,计算使用网站运行10年,
+每个用户仅占用10*365比特位即456字节.
+
+.decr key
+   --将key中的值减1,key不存在则先初始化为0,再将1
+192.168.4.50:6350> decr nums    //数据库里,之前没有nums变量
+(integer) -1
+192.168.4.50:6350> get nums
+"-1"
+
+
+
+.decrby key decrement 
+    --将key中的值,减去decrement
+192.168.4.50:6350> decrby nums 2   //安装decrement值自减
+(integer) -3
+
+
+
+.get key
+   --返回key存储的字符串值,若key不存在则返回NULL
+   --若key的值不是字串,则返回错误,get只能处理字符串.
+
+
+.getrange key start end
+
+--返回字符串中的子字串,截取范围为start和end
+--服饰偏移量表示从末尾开始计算,-1表示最后一个字符,-2表示到数第二个字符
+192.168.4.50:6350> GETRANGE first 0 -1   //截取全部字符
+"hello Redisaa"
+
+192.168.4.50:6350> GETRANGE first 0 5    //截取0 到 5 
+"hello "
+
+192.168.4.50:6350> GETRANGE first 2 4
+"llo"
+
+
+
+
+
+
+
+
+
+
+
+
+  
+3.2列表类型命令的使用
+  
+  ..一个变量key可以存多个值
+  ..先进后出
+  ..Redis的list是一个字符队列
+
+lpush         llen    lrang    lpop
+
+lindex        lset     rpush   rpop
+
+
+3.3 hash类型命令的使用
+
+Hash表介绍
+.Redis hash
+--是一个string类型的field 和 value 的映射表
+--一个key可对应多个field,一个field对应一个value
+
+
+
+
+
+
+
+-------------------------------------------------------------------------------
+案例一 配置主从服务器  Redis
+---------------------------------------------------
+192.168.4.52:6352> info replication
+# Replication
+role:master
+connected_slaves:0
+master_replid:88efcbfdc5c16c78c1470559e7de91d77ccec356
+master_replid2:0000000000000000000000000000000000000000
+master_repl_offset:0
+second_repl_offset:-1
+repl_backlog_active:0
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:0
+repl_backlog_histlen:0
+
+192.168.4.52:6352> slaveof 192.168.4.51 6351
+OK
+192.168.4.52:6352> keys *  //第一次同步,是全量备份,会把原来从服务器上数据会被覆盖
+1) "a"
+
+
+
+-----------------------------------------------------------------------------------------------
+案例 二 安装哨兵服务
+
+ 1.安装Redis源码软件 (不需要 初始启动)
+ 2.  vim /etc/sentinel.conf  //新创建主配置文件 ,参考 4.8Redis安装包/root/redis-4.0.8
+
+bind 0.0.0.0     //指定任意本机的ip,去监控服务
+port 26379
+sentinel monitor   server51      192.168.4.51 6351    1 
+                     主机名(自定义)           master主机ip地址     票数
+sentinel auth-pass server51 123456
+~                                                                               
+wq
+
+[root@host57 redis-4.0.8]# redis-sentinel /etc/sentinel.conf    //启动服务                                                                         
+~       
+1162:X 22 Nov 11:08:34.076 # +monitor master server51 192.168.4.51 6351 quorum 1
+1162:X 22 Nov 11:08:34.077 * +slave slave 192.168.4.52:6352 192.168.4.52 6352 @ server51 192.168.4.51 6351
+
+//在51服务器Redis停止
+[root@host51 ~]# redis-cli -h 192.168.4.51 -p 6351 -a 123456 shutdown
+
+
+//查看52服务器上
+192.168.4.52:6352> info replication
+# Replication
+role:master
+connected_slaves:0
+
+57服务器主配置文件进行自动变化
+
+[root@host57 ~]# cat /etc/sentinel.conf 
+bind 0.0.0.0
+port 26379
+sentinel myid 3af12aebe5d602d092636dad8b28f93c14521c7d
+sentinel monitor server51 192.168.4.52 6352 1
+# Generated by CONFIG REWRITE
+dir "/root/redis-4.0.8"
+sentinel auth-pass server51 123456
+sentinel config-epoch server51 1
+sentinel leader-epoch server51 1
+sentinel known-slave server51 192.168.4.51 6351
+sentinel current-epoch 1
+
+----------------------------------------------------------------------------------------------
+案例三 , 51服务器 备份dump.rdb 把数据备份到55服务上
+-----------------------------------------------------------------------------------------------
+[root@host50 ~]# cp /var/lib/redis/6379/dump.rdb  /opt/
+[root@host50 ~]# ls /opt/
+dump.rdb
+[root@host50 ~]# cd /opt/
+[root@host50 opt]# ls
+dump.rdb
+[root@host50 opt]# scp dump.rdb root@192.168.4.55:/root/
+
+
+55服务器  //停止 Redis服务器.把原来dump.rdb给删除,把51的dump.rdb放进去重启服务
+
+[root@host55 ~]# redis-cli -h 192.168.4.55 -p 6355 shutdown
+[root@host55 ~]# cd /var/lib/redis/6379/
+[root@host55 6379]# ls
+dump.rdb
+[root@host55 6379]# rm -rf dump.rdb 
+[root@host55 6379]# cp /root/dump.rdb ./
+[root@host55 6379]# ls
+dump.rdb
+[root@host55 6379]# /etc/init.d/redis_6379 start
+Starting Redis server...
+[root@host55 6379]# redis-cli -h 192.168.4.55 -p 6355 
+192.168.4.55:6355> ping
+PONG
+192.168.4.55:6355> keys *
+1) "a"
+2) "name"
+3) "Linux"
+
+
+----------------------------------------------------------------------------------------
+案例四 利用51 appendonly.aof 数据备份 恢复55服务上和51服务器一样数据
+
+[root@host55 6379]# redis-cli -h 192.168.4.55 -p 6355 shutdown
+[root@host55 6379]# vim /etc/redis/6379.conf 
+apendonly yes    //启动aof
+[root@host55 6379]# rm -rf *
+[root@host55 6379]# ls
+
+
+[root@host50 6379]# scp appendonly.aof root@192.168.4.55:/var/lib/redis/6379/         //把51上的appendonly.aof 传输给55服务
+
+[root@host55 6379]# ls
+appendonly.aof
+
+
+[root@host55 6379]# /etc/init.d/redis_6379 start
+Starting Redis server...
+[root@host55 6379]# redis-cli -h 192.168.4.55 -p 6355 
+192.168.4.55:6355> keys *    //51的数据备份过来了.
+1) "rr"
+2) "a"
+3) "Linux"
+4) "name"
+
+
+
